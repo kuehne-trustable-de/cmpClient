@@ -100,6 +100,16 @@ public class CMPClient {
 
 
 	public static void main(String[] args) {
+
+		int ret = handleArgs(args);
+
+		if( ret != 0) {
+			System.exit(ret);
+		}
+
+	}
+	
+	public static int handleArgs(String[] args) {
 	
 		String mode = "Request";
 
@@ -112,7 +122,7 @@ public class CMPClient {
 
 		if( args.length == 0) {
 			printHelp();
-			System.exit(1);
+			return 1;
 		}
 		
 		for( int i = 0; i < args.length; i++) {
@@ -125,6 +135,7 @@ public class CMPClient {
 				mode = "Revoke";
 			} else if( "-h".equals(arg)) {
 				printHelp();
+				return 0;
 			} else {
 				if( nextArgPresent ) {
 					i++;
@@ -151,15 +162,15 @@ public class CMPClient {
 
 		if(plainSecret == null) {
 			System.err.println("'secret' must be provided! Exiting ...");
-			System.exit(1);
+			return 1;
 		}
 		if(caUrl == null) {
 			System.err.println("'caUrl' must be provided! Exiting ...");
-			System.exit(1);
+			return 1;
 		}
 		if(alias == null) {
 			System.err.println("'alias' must be provided! Exiting ...");
-			System.exit(1);
+			return 1;
 		}
 
 		try {
@@ -169,17 +180,17 @@ public class CMPClient {
 				File inFile = new File(csrFile);
 				if( !inFile.exists()) {
 					System.err.println("CSR file '" + csrFile + "' does not exist! Exiting ...");
-					System.exit(1);
+					return 1;
 				}
 				if( !inFile.canRead()) {
 					System.err.println("No read access to CSR file '" + csrFile + "'! Exiting ...");
-					System.exit(1);
+					return 1;
 				}
 				
 				File outFile = new File(certFile);
 				if( outFile.exists()) {
 					System.err.println("Certificate file '" + certFile + "' already exist! Exiting ...");
-					System.exit(1);
+					return 1;
 				}
 				
 				client.signCertificateRequest(inFile, outFile);
@@ -188,11 +199,11 @@ public class CMPClient {
 				File inFile = new File(certFile);
 				if( !inFile.exists()) {
 					System.err.println("Certificate file '" + certFile + "' does not exist! Exiting ...");
-					System.exit(1);
+					return 1;
 				}
 				if( !inFile.canRead()) {
 					System.err.println("No read access to certificate file '" + certFile + "'! Exiting ...");
-					System.exit(1);
+					return 1;
 				}
 	
 				client.revokeCertificate(inFile, reason);
@@ -200,12 +211,13 @@ public class CMPClient {
 			} else {
 				System.err.println("Either an option '-c' (certificate creation) or '-r' (revocation)!");
 				printHelp();
-				System.exit(1);
+				return 1;
 			}
 		} catch(GeneralSecurityException | IOException ex) {
 			System.err.println("problem occured: " + ex.getLocalizedMessage());
 		}
 
+		return 0;
 	}
 
 
