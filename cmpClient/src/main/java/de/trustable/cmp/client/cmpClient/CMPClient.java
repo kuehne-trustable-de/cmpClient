@@ -308,14 +308,11 @@ public class CMPClient {
 	}
 
 	/**
-	 * 
-	 * @param x509Cert
-	 * @param crlReason
-	 * @param hmacSecret
-	 * @param cmpEndpoint
-	 * @param alias
-	 * @throws GeneralSecurityException
-	 * @throws IOException 
+	 * revoke a given certificate
+	 * @param certFile the File handle of the input certificate 
+	 * @param reason the reason as a string
+	 * @throws GeneralSecurityException something cryptographic went wrong
+	 * @throws IOException file access failed somehow
 	 */
 	public void revokeCertificate(final File certFile, final String reason) throws GeneralSecurityException, IOException {
 
@@ -336,16 +333,14 @@ public class CMPClient {
 			isCert.close();
 		}
 	}
+
 	/**
-	 * 
-	 * @param csr
-	 * @param user
-	 * @param password
-	 * @param hmacSecret
-	 * @param cmpEndpoint
-	 * @param alias
-	 * @return
-	 * @throws GeneralSecurityException
+	 * revoke a certificate identified by issuer, subject and serial
+	 * @param issuerDN The X500Name of the issuer
+	 * @param subjectDN The X500Name of the subject
+	 * @param serial the serial
+	 * @param crlReason reason the reason as a BC enum 
+	 * @throws GeneralSecurityException something cryptographic went wrong
 	 */
 	public void revokeCertificate(final X500Name issuerDN, final X500Name subjectDN, final BigInteger serial,
 			final CRLReason crlReason)
@@ -381,14 +376,12 @@ public class CMPClient {
 	}
 
 	/**
-	 * 
-	 * @param certReqId
-	 * @param csr
-	 * @param publicKey
-	 * @param hmacSecret
-	 * @return
-	 * @throws IOException
-	 * @throws GeneralSecurityException
+	 * build the CMP request message
+	 * @param certReqId the handle id for the request
+	 * @param isCSR input stream of the CSR file
+	 * @param hmacSecret the secret for the message authentication
+	 * @return the CMP request message
+	 * @throws GeneralSecurityException something cryptographic went wrong
 	 */
 	public PKIMessage buildCertRequest(long certReqId, final InputStream isCSR, final String hmacSecret)
 			throws GeneralSecurityException {
@@ -406,15 +399,16 @@ public class CMPClient {
 
 	}
 
+
 	/**
 	 * 
-	 * @param certReqId
-	 * @param subjectDN
-	 * @param certExtList
-	 * @param keyInfo
-	 * @param hmacSecret
-	 * @return
-	 * @throws GeneralSecurityException
+	 * @param certReqId the handle id for the request
+	 * @param subjectDN The X500Name of the subject
+	 * @param certExtList a collection o extensions, eg SANS
+	 * @param keyInfo the identification data of the key
+	 * @param hmacSecret the secret for the message authentication
+	 * @return the CMP request message
+	 * @throws GeneralSecurityException something cryptographic went wrong
 	 */
 	public PKIMessage buildCertRequest(long certReqId, final X500Name subjectDN,
 			final Collection<Extension> certExtList, final SubjectPublicKeyInfo keyInfo, final String hmacSecret)
@@ -471,15 +465,14 @@ public class CMPClient {
 
 
 	/**
-	 * 
-	 * 
-	 * @param responseBytes
-	 * @param pkiRequest
-	 * @return
-	 * @throws IOException
-	 * @throws CRMFException
-	 * @throws CMPException
-	 * @throws GeneralSecurityException
+	 * read the response certificate from the CMP response
+	 * @param responseBytes the unparsed response bytes
+	 * @param pkiMessageReq the coresponding request
+	 * @return the created certificate
+	 * @throws IOException io interaction failed somehow
+	 * @throws CRMFException certificate request related problem
+	 * @throws CMPException CMP related problem
+	 * @throws GeneralSecurityException something cryptographic went wrong
 	 */
 	public X509Certificate readCertResponse(final byte[] responseBytes,
 			final PKIMessage pkiMessageReq)
@@ -627,18 +620,17 @@ public class CMPClient {
 	}
 
 	/**
-	 * 
-	 * @param certRevId
-	 * @param issuerDN
-	 * @param subjectDN
-	 * @param serial
-	 * @param crlReason
-	 * @param hmacSecret
-	 * @return
-	 * @throws IOException
-	 * @throws CRMFException
-	 * @throws CMPException
-	 * @throws GeneralSecurityException
+	 * build a certificate revocation request
+	 * @param certRevId the handle id for the request
+	 * @param issuerDN The X500Name of the issuer
+	 * @param subjectDN The X500Name of the subject
+	 * @param serial the serial
+	 * @param crlReason reason the reason as a BC enum 
+	 * @return the request as bytes
+	 * @throws IOException io interaction failed somehow
+	 * @throws CRMFException certificate request related problem
+	 * @throws CMPException CMP related problem
+	 * @throws GeneralSecurityException something cryptographic went wrong
 	 */
 	  public byte[] buildRevocationRequest( long certRevId, final X500Name issuerDN, final X500Name subjectDN, final BigInteger serial, final CRLReason crlReason) 
 	          throws IOException, CRMFException,
@@ -684,16 +676,15 @@ public class CMPClient {
 	  }
 
 
-	  /**
-	   * 
-	   * @param caConnector TODO
-	   * @param responseBytes
-	   * @return
-	   * @throws IOException
-	   * @throws CRMFException
-	   * @throws CMPException
-	   * @throws GeneralSecurityException
-	   */
+	/**
+	 * read the revocation response and check the result
+	 * @param responseBytes the returned response as bytes
+	 * @return the revocation response object
+	 * @throws IOException io interaction failed somehow
+	 * @throws CRMFException certificate request related problem
+	 * @throws CMPException CMP related problem
+	 * @throws GeneralSecurityException something cryptographic went wrong
+	 */
 	public RevRepContent readRevResponse(final byte[] responseBytes)
 			throws IOException, CRMFException, CMPException, GeneralSecurityException {
 
@@ -763,8 +754,10 @@ public class CMPClient {
 	}	  
 
 	/**
-	 * @param body
-	 * @throws GeneralSecurityException
+	 * handle a CMP error response
+	 * 
+	 * @param body the plain response body
+	 * @throws GeneralSecurityException something cryptographic went wrong
 	 */
 	private void handleCMPError(final PKIBody body) throws GeneralSecurityException {
 
@@ -788,9 +781,11 @@ public class CMPClient {
 		throw new GeneralSecurityException(errMsg);
 	}
 
+	
 	/**
-	 * @param pkiMessage
-	 * @return
+	 * print a PKI message with all its details
+	 * 
+	 * @param pkiMessage a message object
 	 */
 	private void printPKIMessageInfo(final PKIMessage pkiMessage) {
 
@@ -806,19 +801,21 @@ public class CMPClient {
 		}
 	}
 
+
 	/**
+	 * build a certificate revocation request as raw bytes
 	 * 
-	 * @param certRevId
-	 * @param issuerDN
-	 * @param subjectDN
-	 * @param serial
-	 * @param crlReason
-	 * @param hmacSecret
-	 * @return
-	 * @throws IOException
-	 * @throws CRMFException
-	 * @throws CMPException
-	 * @throws GeneralSecurityException
+	 * @param certRevId the handle id for the request
+	 * @param issuerDN The X500Name of the issuer
+	 * @param subjectDN The X500Name of the subject
+	 * @param serial the serial
+	 * @param crlReason reason the reason as a BC enum 
+	 * @param hmacSecret the secret for the message authentication
+	 * @return the request as bytes
+	 * @throws IOException io interaction failed somehow
+	 * @throws CRMFException certificate request related problem
+	 * @throws CMPException CMP related problem
+	 * @throws GeneralSecurityException something cryptographic went wrong
 	 */
 	public byte[] buildRevocationRequest(long certRevId, final X500Name issuerDN, final X500Name subjectDN,
 			final BigInteger serial, final CRLReason crlReason, final String hmacSecret)
@@ -863,10 +860,11 @@ public class CMPClient {
 	}
 
 	/**
+	 * convert a csr stream to the corresponding BC object
 	 * 
-	 * @param pem
-	 * @return
-	 * @throws GeneralSecurityException
+	 * @param isCSR the csr input stream
+	 * @return the csr input stream 
+	 * @throws GeneralSecurityException something cryptographic went wrong
 	 */
 	public PKCS10CertificationRequest convertPemToPKCS10CertificationRequest(final InputStream isCSR)
 			throws GeneralSecurityException {
@@ -905,10 +903,10 @@ public class CMPClient {
 	}
 
 	/**
-	 * 
-	 * @param recipientDN
-	 * @param senderDN
-	 * @return
+	 * initialize the message builder with sender and receiver
+	 * @param recipientDN The X500Name of the recipient
+	 * @param senderDN The X500Name of the sender
+	 * @return the initialized builder
 	 */
 	ProtectedPKIMessageBuilder getPKIBuilder(final X500Name recipientDN, final X500Name senderDN) {
 
@@ -925,14 +923,14 @@ public class CMPClient {
 
 	/**
 	 * 
-	 * @param recipientDN
-	 * @param senderDN
-	 * @param senderNonce
-	 * @param recipNonce
-	 * @param transactionId
-	 * @param keyId
-	 * @param recipKeyId
-	 * @return
+	 * @param recipientDN The X500Name of the recipient
+	 * @param senderDN The X500Name of the sender
+	 * @param senderNonce the sender nonce
+	 * @param recipNonce the recipient nonce
+	 * @param transactionId the bytes identifying this transaction
+	 * @param keyId the bytes identifying the key
+	 * @param recipKeyId the bytes identifying the recipient
+	 * @return the assembled builder
 	 */
 	public ProtectedPKIMessageBuilder getPKIBuilder(final X500Name recipientDN, final X500Name senderDN,
 			final byte[] senderNonce, final byte[] recipNonce, final byte[] transactionId, final byte[] keyId,
@@ -973,9 +971,9 @@ public class CMPClient {
 	
 
 	/**
-	 * 
-	 * @param revocationReasonStr
-	 * @return
+	 * from string to BC-defined enum
+	 * @param revocationReasonStr the revocation reason as a string
+	 * @return the enum
 	 */
 	  public CRLReason crlReasonFromString(final String revocationReasonStr) {
 
@@ -1013,10 +1011,10 @@ public class CMPClient {
 
 
 	/**
-	 * 
-	 * @param hmacSecret
-	 * @return
-	 * @throws CRMFException
+	 * build a HMAC  calculator from a given secret 
+	 * @param hmacSecret the given secret for this connection
+	 * @return the HMACCalculator object
+	 * @throws CRMFException creation of the calculator failed
 	 */
 	public MacCalculator getMacCalculator(final String hmacSecret) throws CRMFException {
 
@@ -1030,10 +1028,10 @@ public class CMPClient {
 	}
 
 	/**
-	 * 
-	 * @param ba
-	 * @return
-	 * @throws IOException
+	 * get a DER object from a byte array
+	 * @param ba the input byte array
+	 * @return the ASN1 object
+	 * @throws IOException handling went wrong
 	 */
 	public ASN1Primitive getDERObject(byte[] ba) throws IOException {
 		ASN1InputStream ins = new ASN1InputStream(ba);
@@ -1046,10 +1044,10 @@ public class CMPClient {
 	}
 
 	/**
-	 * 
-	 * @param content
-	 * @return
-	 * @throws GeneralSecurityException
+	 * build a stringified digest ofd a byte array
+	 * @param content the byte array of 
+	 * @return the base64 string
+	 * @throws GeneralSecurityException something cryptographic went wrong
 	 */
 	String getHashAsBase64(byte[] content) throws GeneralSecurityException {
 		MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -1059,11 +1057,12 @@ public class CMPClient {
 	}
 
 	/**
+	 * make a remote http call
 	 * 
-	 * @param requestUrl
-	 * @param requestBytes
-	 * @return
-	 * @throws IOException
+	 * @param requestUrl the target of the call
+	 * @param requestBytes the bytes to be send
+	 * @return the received bytes
+	 * @throws IOException io handling went wrong
 	 */
 	public byte[] sendHttpReq(final String requestUrl, final byte[] requestBytes) throws IOException {
 
