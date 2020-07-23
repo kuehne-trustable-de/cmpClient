@@ -72,7 +72,7 @@ import org.slf4j.LoggerFactory;
 
 
 /**
- * Hello world!
+ * Simple CMP Client to request or revoke a certificate using the CMP protocol, based on Bouncy Castle
  *
  */
 public class CMPClient {
@@ -232,18 +232,18 @@ public class CMPClient {
 		System.out.println("\nArguments:\n");
 		System.out.println("-u caURL\tCA URL (required)");
 		System.out.println("-a alias\tAlias configuration (required)");
-		System.out.println("-s secret (required)");
+		System.out.println("-s secret\tCMP access secret (required)");
 		System.out.println("-e reason\trevocation reason (required for revocation), valid values are");
-		System.out.println("\t\t\tkeyCompromise");
-		System.out.println("\t\t\tcACompromise");
-		System.out.println("\t\t\taffiliationChanged");
-		System.out.println("\t\t\tsuperseded");
-		System.out.println("\t\t\tcessationOfOperation");
-		System.out.println("\t\t\tprivilegeWithdrawn");
-		System.out.println("\t\t\taACompromise");
-		System.out.println("\t\t\tcertificateHold");
-		System.out.println("\t\t\tremoveFromCRL");
-		System.out.println("\t\t\tunspecified\n");
+		System.out.println("\t\tkeyCompromise");
+		System.out.println("\t\tcACompromise");
+		System.out.println("\t\taffiliationChanged");
+		System.out.println("\t\tsuperseded");
+		System.out.println("\t\tcessationOfOperation");
+		System.out.println("\t\tprivilegeWithdrawn");
+		System.out.println("\t\taACompromise");
+		System.out.println("\t\tcertificateHold");
+		System.out.println("\t\tremoveFromCRL");
+		System.out.println("\t\tunspecified\n");
 
 		System.out.println("-i input\tCSR (required for request) / certificate file (required for revocation)");
 		System.out.println("-o output\tCertificate file");
