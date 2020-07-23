@@ -9,7 +9,9 @@
 	<packaging>jar</packaging>
 
 	<name>cmpClient</name>
-	<url>http://maven.apache.org</url>
+	<description>Simple CMP Client to request or revoke a certificate using the CMP protocol, based on Bouncy Castle</description>
+	
+	<url>https://github.com/kuehne-trustable-de/cmpClient</url>
 
 	<licenses>
 		<license>
