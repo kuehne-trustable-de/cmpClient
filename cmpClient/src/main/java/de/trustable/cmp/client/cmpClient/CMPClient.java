@@ -116,7 +116,7 @@ public class CMPClient {
 		String plainSecret = null;
 		String caUrl = null; 
 		String alias = null;
-		String reason = null;
+		String reason = "unspecified";
 		String csrFile = "test.csr";
 		String certFile = "test.crt";
 
