@@ -5,7 +5,7 @@
 
 	<groupId>de.trustable.cmp.client</groupId>
 	<artifactId>cmpClient</artifactId>
-	<version>1.0.3</version>
+	<version>1.1.0</version>
 	<packaging>jar</packaging>
 
 	<name>cmpClient</name>
@@ -43,7 +43,7 @@
 
         <maven-javadoc-plugin.version>3.2.0</maven-javadoc-plugin.version>
 
-		<bouncyCastleVersion>1.64</bouncyCastleVersion>
+		<bouncyCastleVersion>1.69</bouncyCastleVersion>
 		<slf4jSimpleVersion>1.7.30</slf4jSimpleVersion>
 
 	</properties>

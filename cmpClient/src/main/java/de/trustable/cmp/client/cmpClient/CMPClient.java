@@ -54,6 +54,7 @@ import org.bouncycastle.asn1.x509.ExtensionsGenerator;
 import org.bouncycastle.asn1.x509.GeneralName;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.cert.cmp.CMPException;
+import org.bouncycastle.cert.cmp.GeneralPKIMessage;
 import org.bouncycastle.cert.cmp.ProtectedPKIMessage;
 import org.bouncycastle.cert.cmp.ProtectedPKIMessageBuilder;
 import org.bouncycastle.cert.crmf.CRMFException;
@@ -67,8 +68,6 @@ import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.operator.MacCalculator;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 import org.bouncycastle.util.encoders.Base64;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 
 /**
@@ -77,25 +76,25 @@ import org.slf4j.LoggerFactory;
  */
 public class CMPClient {
 	
-	private static final Logger LOGGER = LoggerFactory.getLogger(CMPClient.class);
-
     SecureRandom secRandom = new SecureRandom();
 
 	private String plainSecret = "foo123";
 	private String caUrl = "http://...,"; 
 	private String alias = "test";
+	boolean verbose = false;
 
 
 	private CMPClient() {
         java.security.Security.addProvider( new BouncyCastleProvider() );
 	}
 	
-	public CMPClient(String caUrl, String alias, String plainSecret) {
+	public CMPClient(String caUrl, String alias, String plainSecret, boolean verbose) {
 		this();
 		
 		this.plainSecret = plainSecret;
 		this.caUrl = caUrl; 
 		this.alias = alias;
+		this.verbose = verbose;
 	}
 
 
@@ -119,6 +118,7 @@ public class CMPClient {
 		String reason = "unspecified";
 		String csrFile = "test.csr";
 		String certFile = "test.crt";
+		boolean verbose = false;
 
 		if( args.length == 0) {
 			printHelp();
@@ -133,6 +133,8 @@ public class CMPClient {
 				mode = "Request";
 			} else if( "-r".equals(arg)) {
 				mode = "Revoke";
+			} else if( "-v".equals(arg)) {
+				verbose = true;
 			} else if( "-h".equals(arg)) {
 				printHelp();
 				return 0;
@@ -174,9 +176,11 @@ public class CMPClient {
 		}
 
 		try {
-			CMPClient client = new CMPClient( caUrl, alias, plainSecret);
+			CMPClient client = new CMPClient( caUrl, alias, plainSecret, verbose);
 			if( "Request".equals(mode)) {
-				
+
+				System.out.println("Requesting certificate from csr file '" + csrFile + "' ...");
+
 				File inFile = new File(csrFile);
 				if( !inFile.exists()) {
 					System.err.println("CSR file '" + csrFile + "' does not exist! Exiting ...");
@@ -195,7 +199,9 @@ public class CMPClient {
 				
 				client.signCertificateRequest(inFile, outFile);
 			} else if( "Revoke".equals(mode)) {
-	
+
+				System.out.println("Revoking certificate from file '" + certFile + "' ...");
+
 				File inFile = new File(certFile);
 				if( !inFile.exists()) {
 					System.err.println("Certificate file '" + certFile + "' does not exist! Exiting ...");
@@ -214,9 +220,11 @@ public class CMPClient {
 				return 1;
 			}
 		} catch(GeneralSecurityException | IOException ex) {
-			System.err.println("problem occured: " + ex.getLocalizedMessage());
+			System.err.println(" WARN: problem occurred " + ex.getMessage());
+			if(verbose) {
+				ex.printStackTrace();
+			}
 		}
-
 		return 0;
 	}
 
@@ -247,7 +255,9 @@ public class CMPClient {
 
 		System.out.println("-i input\tCSR (required for request) / certificate file (required for revocation)");
 		System.out.println("-o output\tCertificate file");
-		
+
+		System.out.println("-v verbose\tenable verbose log output");
+
 	}
 
 	public void signCertificateRequest(final File csrFile, final File certFile)
@@ -260,8 +270,12 @@ public class CMPClient {
 		FileOutputStream osCert = new FileOutputStream(certFile);
 		osCert.write(cert.getEncoded());
 		osCert.close();
-		
-		LOGGER.info("creation of certificate with subject '{}' succeeded!", cert.getSubjectDN().getName() );
+
+		if( cert.getSubjectDN() != null && cert.getSubjectDN().getName() != null) {
+			log("creation of certificate with subject '" + cert.getSubjectDN().getName() + "' written to file '" + certFile.getName() +"'");
+		}else{
+			log("creation of certificate written to file '" + certFile.getName() +"'");
+		}
 
 	}
 	
@@ -277,9 +291,8 @@ public class CMPClient {
 
 			byte[] requestBytes = pkiRequest.getEncoded();
 
-			LOGGER.debug("requestBytes : " + java.util.Base64.getEncoder().encodeToString(requestBytes));
-			
-			LOGGER.debug("cmp client calls url '{}' with alias '{}' ", caUrl, alias);
+			trace("requestBytes : " + java.util.Base64.getEncoder().encodeToString(requestBytes));
+			trace("cmp client calls url '"+caUrl+"' with alias '"+alias+"'");
 
 			// send and receive ..
 			byte[] responseBytes = sendHttpReq(caUrl + "/" + alias, requestBytes);
@@ -288,21 +301,19 @@ public class CMPClient {
 				throw new GeneralSecurityException("remote connector returned 'null'");
 			}
 
-			LOGGER.debug("responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));
+			trace("responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));
 
 			// extract the certificate
-			X509Certificate cert = readCertResponse(responseBytes, pkiRequest);
-
-			return cert;
+			return readCertResponse(responseBytes, pkiRequest);
 
 		} catch (CRMFException e) {
-			LOGGER.info("CMS format problem", e);
+			log("CMS format problem", e);
 			throw new GeneralSecurityException(e.getMessage());
 		} catch (CMPException e) {
-			LOGGER.info("CMP problem", e);
+			log("CMP problem", e);
 			throw new GeneralSecurityException(e.getMessage());
 		} catch (IOException e) {
-			LOGGER.info("IO / encoding problem", e);
+			log("IO / encoding problem", e);
 			throw new GeneralSecurityException(e.getMessage());
 		}
 	}
@@ -323,11 +334,11 @@ public class CMPClient {
 			X509Certificate x509Cert = (X509Certificate) certificateFactory.generateCertificate(isCert);
 
 			CRLReason crlReason = crlReasonFromString(reason);
-			
+
 			revokeCertificate(JcaX500NameUtil.getIssuer(x509Cert), JcaX500NameUtil.getSubject(x509Cert),
 					x509Cert.getSerialNumber(), crlReason);
 
-			LOGGER.info("revocation of certificate '{}' with reason '{}' succeeded!", x509Cert.getSubjectDN().getName(), reason);
+			log("revocation of certificate '"+x509Cert.getSubjectDN().getName()+"' with reason '"+reason+"' succeeded!");
 
 		} finally {
 			isCert.close();
@@ -354,23 +365,21 @@ public class CMPClient {
 			byte[] revocationRequestBytes = buildRevocationRequest(certRevId, issuerDN, subjectDN, serial, crlReason);
 
 			// send and receive ..
-			LOGGER.debug("revocation requestBytes : " + java.util.Base64.getEncoder().encodeToString(revocationRequestBytes));
+			trace("revocation requestBytes : " + java.util.Base64.getEncoder().encodeToString(revocationRequestBytes));
 			byte[] responseBytes = sendHttpReq(caUrl + "/" + alias, revocationRequestBytes);
-			LOGGER.debug("revocation responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));
+			trace("revocation responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));
 
 			// handle the response
 			readRevResponse(responseBytes);
 
-			return;
-
 		} catch (CRMFException e) {
-			LOGGER.info("CMS format problem", e);
+			log("CMS format problem", e);
 			throw new GeneralSecurityException(e.getMessage());
 		} catch (CMPException e) {
-			LOGGER.info("CMP problem", e);
+			log("CMP problem", e);
 			throw new GeneralSecurityException(e.getMessage());
 		} catch (IOException e) {
-			LOGGER.info("IO / encoding problem", e);
+			log("IO / encoding problem", e);
 			throw new GeneralSecurityException(e.getMessage());
 		}
 	}
@@ -389,9 +398,9 @@ public class CMPClient {
 		PKCS10CertificationRequest p10Req = convertPemToPKCS10CertificationRequest(isCSR);
 
 		X500Name subjectDN = p10Req.getSubject();
-		LOGGER.debug("subjectDN : " + subjectDN.toString());
+		trace("subjectDN : " + subjectDN.toString());
 
-		Collection<Extension> certExtList = new ArrayList<Extension>();
+		Collection<Extension> certExtList = new ArrayList<>();
 
 		final SubjectPublicKeyInfo keyInfo = p10Req.getSubjectPublicKeyInfo();
 
@@ -427,7 +436,7 @@ public class CMPClient {
 		try {
 			for (Extension ext : certExtList) {
 
-				LOGGER.debug("Csr Extension : " + ext.getExtnId().getId() + " -> " + ext.getExtnValue());
+				trace("Csr Extension : " + ext.getExtnId().getId() + " -> " + ext.getExtnValue());
 
 				boolean critical = false;
 				msgbuilder.addExtension(ext.getExtnId(), critical, ext.getParsedValue());
@@ -438,11 +447,11 @@ public class CMPClient {
 			msgbuilder.setAuthInfoSender(sender);
 
 			// RAVerified POP
+			// I am a  client, I do trust my master!
 			msgbuilder.setProofOfPossessionRaVerified();
 
 			CertificateRequestMessage msg = msgbuilder.build();
-
-			LOGGER.debug("CertTemplate : " + msg.getCertTemplate());
+			trace("CertTemplate : " + msg.getCertTemplate());
 
 			ProtectedPKIMessageBuilder pbuilder = getPKIBuilder(issuerDN, subjectDN);
 
@@ -453,12 +462,10 @@ public class CMPClient {
 			MacCalculator macCalculator = getMacCalculator(hmacSecret);
 			ProtectedPKIMessage message = pbuilder.build(macCalculator);
 
-			org.bouncycastle.asn1.cmp.PKIMessage pkiMessage = message.toASN1Structure();
-
-			return pkiMessage;
+			return message.toASN1Structure();
 
 		} catch (CRMFException | CMPException | IOException crmfe) {
-			LOGGER.warn("Exception occured processing extensions", crmfe);
+			log("Exception occured processing extensions", crmfe);
 			throw new GeneralSecurityException(crmfe.getMessage());
 		}
 	}
@@ -478,13 +485,15 @@ public class CMPClient {
 			final PKIMessage pkiMessageReq)
 			throws IOException, CRMFException, CMPException, GeneralSecurityException {
 
+
+		// validate protected messages
+		buildPKIMessage(responseBytes);
+
 		final ASN1Primitive derObject = getDERObject(responseBytes);
 		final PKIMessage pkiMessage = PKIMessage.getInstance(derObject);
 		if (pkiMessage == null) {
 			throw new GeneralSecurityException("No CMP message could be parsed from received Der object.");
 		}
-
-		printPKIMessageInfo(pkiMessage);
 
 		PKIHeader pkiHeaderReq = pkiMessageReq.getHeader();
 		PKIHeader pkiHeaderResp = pkiMessage.getHeader();
@@ -492,9 +501,9 @@ public class CMPClient {
 		if (!pkiHeaderReq.getSenderNonce().equals(pkiHeaderResp.getRecipNonce())) {
 			ASN1OctetString asn1Oct = pkiHeaderResp.getRecipNonce();
 			if (asn1Oct == null) {
-				LOGGER.info("Recip nonce  == null");
+				log("Recip nonce == null");
 			} else {
-				LOGGER.info("sender nonce "
+				log("sender nonce differ from recepient nonce "
 						+ java.util.Base64.getEncoder().encodeToString(pkiHeaderReq.getSenderNonce().getOctets())
 						+ " != " + java.util.Base64.getEncoder().encodeToString(asn1Oct.getOctets()));
 			}
@@ -517,13 +526,11 @@ public class CMPClient {
 		if (!pkiHeaderReq.getTransactionID().equals(pkiHeaderResp.getTransactionID())) {
 			ASN1OctetString asn1Oct = pkiHeaderResp.getTransactionID();
 			if (asn1Oct == null) {
-				LOGGER.info("transaction id == null");
+				log("transaction id == null");
 			} else {
-				if (LOGGER.isDebugEnabled()) {
-					LOGGER.debug("transaction id "
-							+ java.util.Base64.getEncoder().encodeToString(pkiHeaderReq.getTransactionID().getOctets())
-							+ " != " + java.util.Base64.getEncoder().encodeToString(asn1Oct.getOctets()));
-				}
+				log("transaction id differ between request and response: "
+						+ java.util.Base64.getEncoder().encodeToString(pkiHeaderReq.getTransactionID().getOctets())
+						+ " != " + java.util.Base64.getEncoder().encodeToString(asn1Oct.getOctets()));
 			}
 			throw new GeneralSecurityException("Sender / Recip Transaction Id mismatch");
 		}
@@ -542,10 +549,10 @@ public class CMPClient {
 			try {
 				// CMPCertificate[] cmpCertArr = certRepMessage.getCaPubs();
 				CMPCertificate[] cmpCertArr = pkiMessage.getExtraCerts();
-				LOGGER.info("CMP Response body contains " + cmpCertArr.length + " extra certificates");
+				log("CMP Response body contains " + cmpCertArr.length + " extra certificates");
 				for (int i = 0; i < cmpCertArr.length; i++) {
 					CMPCertificate cmpCert = cmpCertArr[i];
-					LOGGER.info("Added CA '" + cmpCert.getX509v3PKCert().getSubject() + "' from CMP Response body");
+					trace("Added CA '" + cmpCert.getX509v3PKCert().getSubject() + "' from CMP Response body");
 					// store if required ...
 				}
 			} catch (NullPointerException npe) { // NOSONAR
@@ -557,12 +564,12 @@ public class CMPClient {
 				throw new GeneralSecurityException("No CMP response found.");
 			}
 
-			LOGGER.info("CMP Response body contains " + respArr.length + " elements");
+			trace("CMP Response body contains " + respArr.length + " elements");
 
 			for (int i = 0; i < respArr.length; i++) {
 
 				if (respArr[i] == null) {
-					throw new GeneralSecurityException("No CMP response returned.");
+					throw new GeneralSecurityException("CMP response element #"+i+" of "+ respArr.length+" returns no content.");
 				}
 
 				BigInteger status = BigInteger.ZERO;
@@ -589,9 +596,7 @@ public class CMPClient {
 					org.bouncycastle.asn1.x509.Certificate cmpCertificate = cmpCert.getX509v3PKCert();
 					if (cmpCertificate != null) {
 
-						if (LOGGER.isDebugEnabled()) {
-							LOGGER.debug("#" + i + ": " + cmpCertificate);
-						}
+						trace("#" + i + ": " + cmpCertificate);
 
 						final CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509", "BC");
 
@@ -604,9 +609,7 @@ public class CMPClient {
 						X509Certificate[] certArray = certificateChain.toArray(new X509Certificate[0]);
 
 						X509Certificate cert = certArray[0];
-						if (LOGGER.isDebugEnabled()) {
-							LOGGER.info("#" + i + ": " + cert);
-						}
+						trace("#" + i + ": " + cert);
 
 						return cert;
 					}
@@ -617,6 +620,23 @@ public class CMPClient {
 		}
 
 		return null;
+	}
+
+	private GeneralPKIMessage buildPKIMessage(byte[] responseBytes) throws IOException, CMPException, CRMFException, GeneralSecurityException {
+		GeneralPKIMessage generalPKIMessage = new GeneralPKIMessage(responseBytes);
+		printPKIMessageInfo(generalPKIMessage);
+		if (generalPKIMessage.hasProtection()) {
+			ProtectedPKIMessage protectedPKIMsg = new ProtectedPKIMessage(generalPKIMessage);
+
+			if (protectedPKIMsg.verify(getMacCalculatorBuilder(), plainSecret.toCharArray())) {
+				trace("received response message verified successfully by HMAC");
+			} else {
+				throw new GeneralSecurityException("received response message failed verification (by HMAC)!");
+			}
+		} else {
+			warn("received response message contains NO content protection!");
+		}
+		return generalPKIMessage;
 	}
 
 	/**
@@ -630,11 +650,10 @@ public class CMPClient {
 	 * @throws IOException io interaction failed somehow
 	 * @throws CRMFException certificate request related problem
 	 * @throws CMPException CMP related problem
-	 * @throws GeneralSecurityException something cryptographic went wrong
 	 */
 	  public byte[] buildRevocationRequest( long certRevId, final X500Name issuerDN, final X500Name subjectDN, final BigInteger serial, final CRLReason crlReason) 
 	          throws IOException, CRMFException,
-	          CMPException, GeneralSecurityException {
+	          CMPException {
 	  
 	  
 	    // Cert template too tell which cert we want to revoke
@@ -668,10 +687,8 @@ public class CMPClient {
 	    
 	    org.bouncycastle.asn1.cmp.PKIMessage pkiMessage = message.toASN1Structure();
 
-	    if( LOGGER.isDebugEnabled() ){
-	    	LOGGER.debug( "sender nonce : " + Base64.toBase64String( pkiMessage.getHeader().getSenderNonce().getOctets() ));
-	    }
-	    
+    	trace( "sender nonce : " + Base64.toBase64String( pkiMessage.getHeader().getSenderNonce().getOctets() ));
+
 	    return pkiMessage.getEncoded();
 	  }
 
@@ -688,47 +705,31 @@ public class CMPClient {
 	public RevRepContent readRevResponse(final byte[] responseBytes)
 			throws IOException, CRMFException, CMPException, GeneralSecurityException {
 
-		final ASN1Primitive derObject = getDERObject(responseBytes);
-
-		final PKIMessage pkiMessage = PKIMessage.getInstance(derObject);
-		if (pkiMessage == null) {
-			throw new GeneralSecurityException("No CMP message could be parsed from received Der object.");
-		}
+		GeneralPKIMessage pkiMessage = buildPKIMessage(responseBytes);
 
 		final PKIHeader header = pkiMessage.getHeader();
 
 		if (header.getRecipNonce() == null) {
-			LOGGER.debug("no recip nonce");
+			trace("no recipient nonce");
 		} else {
-			if (LOGGER.isDebugEnabled()) {
-				LOGGER.debug("recip nonce : " + Base64.toBase64String(header.getRecipNonce().getOctets()));
-			}
+			trace("recipient nonce : " + Base64.toBase64String(header.getRecipNonce().getOctets()));
 		}
 
 		if (header.getSenderNonce() == null) {
-			LOGGER.debug("no sender nonce");
+			trace("no sender nonce");
 		} else {
-			if (LOGGER.isDebugEnabled()) {
-				LOGGER.debug("sender nonce : " + Base64.toBase64String(header.getSenderNonce().getOctets()));
-			}
+			trace("sender nonce : " + Base64.toBase64String(header.getSenderNonce().getOctets()));
 		}
 
 		final PKIBody body = pkiMessage.getBody();
 
 		int tagno = body.getType();
-
-		if (LOGGER.isDebugEnabled()) {
-			LOGGER.debug("Received CMP message with pvno=" + header.getPvno() + ", sender="
-					+ header.getSender().toString() + ", recipient=" + header.getRecipient().toString());
-			LOGGER.debug("Body is of type: " + tagno);
-			LOGGER.debug("Transaction id: " + header.getTransactionID());
-		}
 		if (tagno == PKIBody.TYPE_ERROR) {
 			handleCMPError(body);
 
 		} else if (tagno == PKIBody.TYPE_REVOCATION_REP) {
 
-			LOGGER.debug("Rev response received");
+			trace("Rev response received");
 
 			if (body.getContent() != null) {
 				RevRepContent revRepContent = RevRepContent.getInstance(body.getContent());
@@ -736,11 +737,10 @@ public class CMPClient {
 				CertId[] certIdArr = revRepContent.getRevCerts();
 				if (certIdArr != null) {
 					for (CertId certId : certIdArr) {
-						LOGGER.info(
-								"revoked certId : " + certId.getIssuer() + " / " + certId.getSerialNumber().getValue());
+						trace("revoked certId : " + certId.getIssuer() + " / " + certId.getSerialNumber().getValue());
 					}
 				} else {
-					LOGGER.debug("no certId ");
+					trace("no certId ");
 				}
 				return revRepContent;
 
@@ -761,17 +761,20 @@ public class CMPClient {
 	 */
 	private void handleCMPError(final PKIBody body) throws GeneralSecurityException {
 
-		ErrorMsgContent errMsgContent = ErrorMsgContent.getInstance(body.getContent());
-		String errMsg = "errMsg : #" + errMsgContent.getErrorCode() + " " + errMsgContent.getErrorDetails() + " / "
-				+ errMsgContent.getPKIStatusInfo().getFailInfo();
+		String errMsg = "";
 
-		LOGGER.info(errMsg);
+		ErrorMsgContent errMsgContent = ErrorMsgContent.getInstance(body.getContent());
+		if( errMsgContent.getErrorCode() != null) {
+			errMsg = "errMsg : #" + errMsgContent.getErrorCode() + " " + errMsgContent.getErrorDetails() + " / "
+					+ errMsgContent.getPKIStatusInfo().getFailInfo();
+			log(errMsg);
+		}
 
 		try {
-			if (errMsgContent != null && errMsgContent.getPKIStatusInfo() != null) {
+			if (errMsgContent.getPKIStatusInfo() != null) {
 				PKIFreeText freeText = errMsgContent.getPKIStatusInfo().getStatusString();
 				for (int i = 0; i < freeText.size(); i++) {
-					LOGGER.info("#" + i + ": " + freeText.getStringAt(i));
+					trace("#" + i + ": " + freeText.getStringAt(i));
 				}
 			}
 		} catch (NullPointerException npe) { // NOSONAR
@@ -781,83 +784,24 @@ public class CMPClient {
 		throw new GeneralSecurityException(errMsg);
 	}
 
-	
+
 	/**
 	 * print a PKI message with all its details
-	 * 
+	 *
 	 * @param pkiMessage a message object
 	 */
-	private void printPKIMessageInfo(final PKIMessage pkiMessage) {
+	private void printPKIMessageInfo(final GeneralPKIMessage pkiMessage) {
 
 		final PKIHeader header = pkiMessage.getHeader();
 		final PKIBody body = pkiMessage.getBody();
 
-		int tagno = body.getType();
-		if (LOGGER.isDebugEnabled()) {
-			LOGGER.debug("Received CMP message with pvno=" + header.getPvno() + ", sender="
-					+ header.getSender().toString() + ", recipient=" + header.getRecipient().toString());
-			LOGGER.debug("Body is of type: " + tagno);
-			LOGGER.debug("Transaction id: " + header.getTransactionID());
-		}
+		trace("Received " + (pkiMessage.hasProtection() ? " protected " : "") + "CMP message with pvno=" + header.getPvno() + ", sender="
+				+ header.getSender().toString() + ", recipient=" + header.getRecipient().toString());
+
+		trace("Body is of type: " + body.getType());
+		trace("Transaction id: " + header.getTransactionID());
 	}
 
-
-	/**
-	 * build a certificate revocation request as raw bytes
-	 * 
-	 * @param certRevId the handle id for the request
-	 * @param issuerDN The X500Name of the issuer
-	 * @param subjectDN The X500Name of the subject
-	 * @param serial the serial
-	 * @param crlReason reason the reason as a BC enum 
-	 * @param hmacSecret the secret for the message authentication
-	 * @return the request as bytes
-	 * @throws IOException io interaction failed somehow
-	 * @throws CRMFException certificate request related problem
-	 * @throws CMPException CMP related problem
-	 * @throws GeneralSecurityException something cryptographic went wrong
-	 */
-	public byte[] buildRevocationRequest(long certRevId, final X500Name issuerDN, final X500Name subjectDN,
-			final BigInteger serial, final CRLReason crlReason, final String hmacSecret)
-			throws IOException, CRMFException, CMPException, GeneralSecurityException {
-
-		// Cert template too tell which cert we want to revoke
-		CertTemplateBuilder myCertTemplate = new CertTemplateBuilder();
-		myCertTemplate.setIssuer(issuerDN);
-		myCertTemplate.setSerialNumber(new ASN1Integer(serial));
-
-		// Extension telling revocation reason
-		ExtensionsGenerator extgen = new ExtensionsGenerator();
-		extgen.addExtension(Extension.reasonCode, false, crlReason);
-
-		Extensions exts = extgen.generate();
-		ASN1EncodableVector v = new ASN1EncodableVector();
-		v.add(myCertTemplate.build());
-		v.add(exts);
-		ASN1Sequence seq = new DERSequence(v);
-		RevDetails myRevDetails = RevDetails.getInstance(seq);
-		RevReqContent myRevReqContent = new RevReqContent(myRevDetails);
-
-		// get a builder
-		ProtectedPKIMessageBuilder pbuilder = getPKIBuilder(issuerDN, subjectDN);
-
-		// create the body
-		PKIBody pkiBody = new PKIBody(PKIBody.TYPE_REVOCATION_REQ, myRevReqContent); // revocation request
-		pbuilder.setBody(pkiBody);
-
-		// get the MacCalculator
-		MacCalculator macCalculator = getMacCalculator(hmacSecret);
-		ProtectedPKIMessage message = pbuilder.build(macCalculator);
-
-		org.bouncycastle.asn1.cmp.PKIMessage pkiMessage = message.toASN1Structure();
-
-		if (LOGGER.isDebugEnabled()) {
-			LOGGER.debug(
-					"sender nonce : " + Base64.toBase64String(pkiMessage.getHeader().getSenderNonce().getOctets()));
-		}
-
-		return pkiMessage.getEncoded();
-	}
 
 	/**
 	 * convert a csr stream to the corresponding BC object
@@ -888,14 +832,14 @@ public class CMPClient {
 
 			}
 		} catch (IOException ex) {
-			LOGGER.error("IOException, convertPemToPublicKey", ex);
+			log("IOException, convertPemToPublicKey", ex);
 			throw new GeneralSecurityException("Parsing of CSR failed! Not PEM encoded?");
 		} finally {
 			try {
 				pemParser.close();
 			} catch (IOException e) {
 				// just ignore
-				LOGGER.debug("IOException on close()", e);
+				log("IOException on close()", e);
 			}
 		}
 
@@ -1011,20 +955,28 @@ public class CMPClient {
 
 
 	/**
-	 * build a HMAC  calculator from a given secret 
-	 * @param hmacSecret the given secret for this connection
-	 * @return the HMACCalculator object
+	 * build a PKMACBuilder
 	 * @throws CRMFException creation of the calculator failed
+	 * @return the PKMACBuilder object withdefault algorithms
 	 */
-	public MacCalculator getMacCalculator(final String hmacSecret) throws CRMFException {
+	public PKMACBuilder getMacCalculatorBuilder() throws CRMFException {
 
 		JcePKMACValuesCalculator jcePkmacCalc = new JcePKMACValuesCalculator();
 		final AlgorithmIdentifier digAlg = new AlgorithmIdentifier(new ASN1ObjectIdentifier("1.3.14.3.2.26")); // SHA1
 		final AlgorithmIdentifier macAlg = new AlgorithmIdentifier(new ASN1ObjectIdentifier("1.2.840.113549.2.7")); // HMAC/SHA1
 		jcePkmacCalc.setup(digAlg, macAlg);
-		PKMACBuilder macbuilder = new PKMACBuilder(jcePkmacCalc);
-		MacCalculator macCalculator = macbuilder.build(hmacSecret.toCharArray());
-		return macCalculator;
+		return new PKMACBuilder(jcePkmacCalc);
+	}
+
+	/**
+	 * build a HMAC  calculator from a given secret
+	 * @param hmacSecret the given secret for this connection
+	 * @return the HMACCalculator object
+	 * @throws CRMFException creation of the calculator failed
+	 */
+	public MacCalculator getMacCalculator(final String hmacSecret) throws CRMFException {
+		PKMACBuilder macbuilder = getMacCalculatorBuilder();
+		return macbuilder.build(hmacSecret.toCharArray());
 	}
 
 	/**
@@ -1036,8 +988,7 @@ public class CMPClient {
 	public ASN1Primitive getDERObject(byte[] ba) throws IOException {
 		ASN1InputStream ins = new ASN1InputStream(ba);
 		try {
-			ASN1Primitive obj = ins.readObject();
-			return obj;
+			return ins.readObject();
 		} finally {
 			ins.close();
 		}
@@ -1066,7 +1017,7 @@ public class CMPClient {
 	 */
 	public byte[] sendHttpReq(final String requestUrl, final byte[] requestBytes) throws IOException {
 
-		LOGGER.debug("Sending request to: " + requestUrl);
+		trace("Sending request to: " + requestUrl);
 
 		long startTime = System.currentTimeMillis();
 
@@ -1090,11 +1041,11 @@ public class CMPClient {
 			in = con.getInputStream();
 
 			byte[] tmpBA = new byte[4096];
-			int nBytes = 0;
+			int nBytes;
 			while ((nBytes = in.read(tmpBA)) > 0) {
 				baos.write(tmpBA, 0, nBytes);
 			}
-			LOGGER.debug("# " + baos.size() + " response bytes recieved");
+			trace("# " + baos.size() + " response bytes recieved");
 		} finally {
 			if (in != null) {
 				in.close();
@@ -1102,7 +1053,7 @@ public class CMPClient {
 		}
 
 		if (con.getResponseCode() == 200) {
-			LOGGER.debug("Received certificate reply.");
+			trace("Received certificate reply.");
 		} else {
 			throw new IOException("Error sending CMP request. Response codse != 200 : " + con.getResponseCode());
 		}
@@ -1110,10 +1061,28 @@ public class CMPClient {
 		// We are done, disconnect
 		con.disconnect();
 
-		LOGGER.debug("duration of remote CMP call " + (System.currentTimeMillis() - startTime));
+		trace("duration of remote CMP call " + (System.currentTimeMillis() - startTime));
 
 		return baos.toByteArray();
 	}
 
+	void warn(String msg){
+		System.err.println(" WARN: " +msg);
+	}
+
+	void log(String msg){
+		System.out.println(" log: " +msg);
+	}
+
+	void log(String msg, Exception e){
+		System.out.println("  log: " +msg);
+		e.printStackTrace();
+	}
+
+	void trace(String msg){
+		if(verbose) {
+			System.out.println("trace: " +msg);
+		}
+	}
 
 }
