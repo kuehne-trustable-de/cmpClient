@@ -258,6 +258,14 @@ public class CMPClient {
 
 		System.out.println("-v verbose\tenable verbose log output");
 
+		System.out.println("\nSample use of keytool to create a csr and submit a request:");
+		System.out.println("keytool -genkeypair -keyalg RSA -keysize 2048 -keystore test.p12 -storepass s3cr3t -alias keyAlias -storetype pkcs12 -dname \"C=DE, OU=dev, O=trustable, CN=test.trustable.de\" " );
+		System.out.println("keytool -certreq -keystore test.p12 -storepass s3cr3t -alias keyAlias -ext \"SAN=dns:www.test.trustable.de\" -file test.csr" );
+		System.out.println("java -jar cmpClient-1.1.0-jar-with-dependencies.jar -c -u http://70.34.202.83:80/ejbca/publicweb/cmp -a TestCMP -s s3cr3t -i test.csr -o test.crt" );
+
+		System.out.println("\nRevocation sample:");
+		System.out.println("java -jar cmpClient-1.1.0-jar-with-dependencies.jar -r -u http://70.34.202.83:80/ejbca/publicweb/cmp -a TestCMP -s s3cr3t -o test.crt -e superseded" );
+
 	}
 
 	public void signCertificateRequest(final File csrFile, final File certFile)
@@ -628,10 +636,14 @@ public class CMPClient {
 		if (generalPKIMessage.hasProtection()) {
 			ProtectedPKIMessage protectedPKIMsg = new ProtectedPKIMessage(generalPKIMessage);
 
-			if (protectedPKIMsg.verify(getMacCalculatorBuilder(), plainSecret.toCharArray())) {
-				trace("received response message verified successfully by HMAC");
-			} else {
-				throw new GeneralSecurityException("received response message failed verification (by HMAC)!");
+			if( protectedPKIMsg.hasPasswordBasedMacProtection()) {
+				if (protectedPKIMsg.verify(getMacCalculatorBuilder(), plainSecret.toCharArray())) {
+					trace("received response message verified successfully by HMAC");
+				} else {
+					throw new GeneralSecurityException("received response message failed verification (by HMAC)!");
+				}
+			}else{
+				throw new GeneralSecurityException("received response message has unexpected protection scheme, pbe expected!");
 			}
 		} else {
 			warn("received response message contains NO content protection!");
