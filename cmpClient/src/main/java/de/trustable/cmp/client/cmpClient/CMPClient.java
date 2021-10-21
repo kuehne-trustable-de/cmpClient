@@ -22,14 +22,7 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.Random;
 
-import org.bouncycastle.asn1.ASN1EncodableVector;
-import org.bouncycastle.asn1.ASN1InputStream;
-import org.bouncycastle.asn1.ASN1Integer;
-import org.bouncycastle.asn1.ASN1ObjectIdentifier;
-import org.bouncycastle.asn1.ASN1OctetString;
-import org.bouncycastle.asn1.ASN1Primitive;
-import org.bouncycastle.asn1.ASN1Sequence;
-import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.asn1.*;
 import org.bouncycastle.asn1.cmp.CMPCertificate;
 import org.bouncycastle.asn1.cmp.CertRepMessage;
 import org.bouncycastle.asn1.cmp.CertResponse;
@@ -45,6 +38,7 @@ import org.bouncycastle.asn1.cmp.RevReqContent;
 import org.bouncycastle.asn1.crmf.CertId;
 import org.bouncycastle.asn1.crmf.CertReqMessages;
 import org.bouncycastle.asn1.crmf.CertTemplateBuilder;
+import org.bouncycastle.asn1.pkcs.Attribute;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.CRLReason;
@@ -261,10 +255,10 @@ public class CMPClient {
 		System.out.println("\nSample use of keytool to create a csr and submit a request:");
 		System.out.println("keytool -genkeypair -keyalg RSA -keysize 2048 -keystore test.p12 -storepass s3cr3t -alias keyAlias -storetype pkcs12 -dname \"C=DE, OU=dev, O=trustable, CN=test.trustable.de\" " );
 		System.out.println("keytool -certreq -keystore test.p12 -storepass s3cr3t -alias keyAlias -ext \"SAN=dns:www.test.trustable.de\" -file test.csr" );
-		System.out.println("java -jar cmpClient-1.1.0-jar-with-dependencies.jar -c -u http://70.34.202.83:80/ejbca/publicweb/cmp -a TestCMP -s s3cr3t -i test.csr -o test.crt" );
+		System.out.println("java -jar cmpClient-1.2.0-jar-with-dependencies.jar -c -u http://{yourServer}/ejbca/publicweb/cmp -a {yourCMPAlias} -s {yourPassword} -i test.csr -o test.crt" );
 
 		System.out.println("\nRevocation sample:");
-		System.out.println("java -jar cmpClient-1.1.0-jar-with-dependencies.jar -r -u http://70.34.202.83:80/ejbca/publicweb/cmp -a TestCMP -s s3cr3t -o test.crt -e superseded" );
+		System.out.println("java -jar cmpClient-1.2.0-jar-with-dependencies.jar -r -u http://{yourServer}/ejbca/publicweb/cmp -a {yourCMPAlias} -s {yourPassword} -o test.crt -e superseded" );
 
 	}
 
@@ -410,6 +404,19 @@ public class CMPClient {
 
 		Collection<Extension> certExtList = new ArrayList<>();
 
+		// copy CSR attributes to Extension list
+		for(Attribute attribute: p10Req.getAttributes()){
+			for(ASN1Encodable asn1Encodable: attribute.getAttributeValues()){
+				if( asn1Encodable != null){
+					Extensions extensions = Extensions.getInstance(asn1Encodable);
+					for(ASN1ObjectIdentifier oid: extensions.getExtensionOIDs()){
+						trace("copying oid '"+oid.toString()+"' from csr to PKIMessage");
+						certExtList.add(extensions.getExtension(oid));
+					}
+				}
+			}
+		}
+
 		final SubjectPublicKeyInfo keyInfo = p10Req.getSubjectPublicKeyInfo();
 
 		return buildCertRequest(certReqId, p10Req.getSubject(), certExtList, keyInfo, hmacSecret);
@@ -443,10 +450,8 @@ public class CMPClient {
 
 		try {
 			for (Extension ext : certExtList) {
-
 				trace("Csr Extension : " + ext.getExtnId().getId() + " -> " + ext.getExtnValue());
-
-				boolean critical = false;
+				boolean critical = ext.isCritical();
 				msgbuilder.addExtension(ext.getExtnId(), critical, ext.getParsedValue());
 			}
 
