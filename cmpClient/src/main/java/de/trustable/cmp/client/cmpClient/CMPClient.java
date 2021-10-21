@@ -60,7 +60,10 @@ import org.bouncycastle.cert.jcajce.JcaX500NameUtil;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.operator.MacCalculator;
+import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
+import org.bouncycastle.pkcs.PKCSException;
 import org.bouncycastle.util.encoders.Base64;
 
 
@@ -418,6 +421,14 @@ public class CMPClient {
 		}
 
 		final SubjectPublicKeyInfo keyInfo = p10Req.getSubjectPublicKeyInfo();
+
+		try {
+			if( !p10Req.isSignatureValid(new JcaContentVerifierProviderBuilder().build(keyInfo))){
+				throw new GeneralSecurityException("CSR signature validation failed");
+			}
+		} catch (PKCSException | OperatorCreationException e) {
+			throw new GeneralSecurityException(e);
+		}
 
 		return buildCertRequest(certReqId, p10Req.getSubject(), certExtList, keyInfo, hmacSecret);
 
