@@ -348,9 +348,6 @@ public class CMPClient {
 					x509Cert.getSerialNumber(), crlReason);
 
 			log("revocation of certificate '"+x509Cert.getSubjectDN().getName()+"' with reason '"+reason+"' succeeded!");
-
-		} catch (Exception ex) {
-			ex.printStackTrace();
 		}
 	}
 
