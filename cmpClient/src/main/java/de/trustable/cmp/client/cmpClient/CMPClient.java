@@ -1,14 +1,6 @@
 package de.trustable.cmp.client.cmpClient;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.Reader;
+import java.io.*;
 import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -17,10 +9,7 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Date;
-import java.util.Random;
+import java.util.*;
 
 import org.bouncycastle.asn1.*;
 import org.bouncycastle.asn1.cmp.CMPCertificate;
@@ -65,6 +54,7 @@ import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 import org.bouncycastle.pkcs.PKCSException;
 import org.bouncycastle.util.encoders.Base64;
+import org.bouncycastle.openssl.PEMWriter;
 
 
 /**
@@ -113,8 +103,9 @@ public class CMPClient {
 		String caUrl = null; 
 		String alias = null;
 		String reason = "unspecified";
-		String csrFile = "test.csr";
-		String certFile = "test.crt";
+		String inFileName = "test.csr";
+		String outFileName = "test.crt";
+		String outForm = "PEM";
 		boolean verbose = false;
 
 		if( args.length == 0) {
@@ -148,9 +139,11 @@ public class CMPClient {
 					} else if( "-e".equals(arg)) {
 						reason = nArg;
 					} else if( "-i".equals(arg)) {
-						csrFile = nArg;
+						inFileName = nArg;
+					} else if( "-of".equals(arg)) {
+						outForm = nArg.toUpperCase(Locale.ROOT);
 					} else if( "-o".equals(arg)) {
-						certFile = nArg;
+						outFileName = nArg;
 					}
 					
 				}else {
@@ -172,40 +165,45 @@ public class CMPClient {
 			return 1;
 		}
 
+		if(!(outForm.equals("DER") || outForm.equals("PEM"))){
+			System.err.println("unrecognized output format! Only PEM and DER are supported. Exiting ...");
+			return 1;
+		}
+
 		try {
 			CMPClient client = new CMPClient( caUrl, alias, plainSecret, verbose);
 			if( "Request".equals(mode)) {
 
-				System.out.println("Requesting certificate from csr file '" + csrFile + "' ...");
+				System.out.println("Requesting certificate from csr file '" + inFileName + "' ...");
 
-				File inFile = new File(csrFile);
+				File inFile = new File(inFileName);
 				if( !inFile.exists()) {
-					System.err.println("CSR file '" + csrFile + "' does not exist! Exiting ...");
+					System.err.println("CSR file '" + inFile + "' does not exist! Exiting ...");
 					return 1;
 				}
 				if( !inFile.canRead()) {
-					System.err.println("No read access to CSR file '" + csrFile + "'! Exiting ...");
+					System.err.println("No read access to CSR file '" + inFile + "'! Exiting ...");
 					return 1;
 				}
 				
-				File outFile = new File(certFile);
+				File outFile = new File(outFileName);
 				if( outFile.exists()) {
-					System.err.println("Certificate file '" + certFile + "' already exist! Exiting ...");
+					System.err.println("Certificate file '" + outFile + "' already exist! Exiting ...");
 					return 1;
 				}
 				
-				client.signCertificateRequest(inFile, outFile);
+				client.signCertificateRequest(inFile, outFile, outForm);
 			} else if( "Revoke".equals(mode)) {
 
-				System.out.println("Revoking certificate from file '" + certFile + "' ...");
+				System.out.println("Revoking certificate from file '" + inFileName + "' ...");
 
-				File inFile = new File(certFile);
+				File inFile = new File(inFileName);
 				if( !inFile.exists()) {
-					System.err.println("Certificate file '" + certFile + "' does not exist! Exiting ...");
+					System.err.println("Certificate file '" + inFileName + "' does not exist! Exiting ...");
 					return 1;
 				}
 				if( !inFile.canRead()) {
-					System.err.println("No read access to certificate file '" + certFile + "'! Exiting ...");
+					System.err.println("No read access to certificate file '" + inFileName + "'! Exiting ...");
 					return 1;
 				}
 	
@@ -252,6 +250,7 @@ public class CMPClient {
 
 		System.out.println("-i input\tCSR (required for request) / certificate file (required for revocation)");
 		System.out.println("-o output\tCertificate file");
+		System.out.println("-of format\tselect PEM or DER format");
 
 		System.out.println("-v verbose\tenable verbose log output");
 
@@ -260,24 +259,30 @@ public class CMPClient {
 		System.out.println("keytool -certreq -keystore test.p12 -storepass s3cr3t -alias keyAlias -ext \"SAN=dns:www.test.trustable.de\" -file test.csr" );
 		System.out.println("java -jar cmpClient-1.2.0-jar-with-dependencies.jar -c -u http://{yourServer}/ejbca/publicweb/cmp -a {yourCMPAlias} -s {yourPassword} -i test.csr -o test.crt" );
 
-		System.out.println("\nRevocation sample:");
-		System.out.println("java -jar cmpClient-1.2.0-jar-with-dependencies.jar -r -u http://{yourServer}/ejbca/publicweb/cmp -a {yourCMPAlias} -s {yourPassword} -o test.crt -e superseded" );
+		System.out.println("\nRevocation sample (DER and PEM certificate format supported):");
+		System.out.println("java -jar cmpClient-1.2.0-jar-with-dependencies.jar -r -u http://{yourServer}/ejbca/publicweb/cmp -a {yourCMPAlias} -s {yourPassword} -i test.crt -e superseded" );
 
 	}
 
-	public void signCertificateRequest(final File csrFile, final File certFile)
+	public void signCertificateRequest(final File csrFile, final File certFile, final String outForm)
 			throws GeneralSecurityException, IOException {
 		
 		InputStream isCSR = new FileInputStream(csrFile);
 		
 		X509Certificate cert = signCertificateRequest(isCSR);
 
-		FileOutputStream osCert = new FileOutputStream(certFile);
-		osCert.write(cert.getEncoded());
-		osCert.close();
+		if("DER".equals(outForm)) {
+			try(FileOutputStream osCert = new FileOutputStream(certFile)) {
+				osCert.write(cert.getEncoded());
+			}
+		}else{
+			try(PEMWriter pemWriter = new PEMWriter(new FileWriter(certFile))){
+				pemWriter.writeObject(cert);
+			}
+		}
 
 		if( cert.getSubjectDN() != null && cert.getSubjectDN().getName() != null) {
-			log("creation of certificate with subject '" + cert.getSubjectDN().getName() + "' written to file '" + certFile.getName() +"'");
+			log("creation of certificate with subject '" + cert.getSubjectDN().getName() + "' written to file '" + certFile.getName() +"' (in " + outForm + " format)" );
 		}else{
 			log("creation of certificate written to file '" + certFile.getName() +"'");
 		}
@@ -332,8 +337,7 @@ public class CMPClient {
 	 */
 	public void revokeCertificate(final File certFile, final String reason) throws GeneralSecurityException, IOException {
 
-		InputStream isCert = new FileInputStream(certFile);
-		try {
+		try(InputStream isCert = new FileInputStream(certFile)) {
 
 			CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
 			X509Certificate x509Cert = (X509Certificate) certificateFactory.generateCertificate(isCert);
@@ -345,8 +349,8 @@ public class CMPClient {
 
 			log("revocation of certificate '"+x509Cert.getSubjectDN().getName()+"' with reason '"+reason+"' succeeded!");
 
-		} finally {
-			isCert.close();
+		} catch (Exception ex) {
+			ex.printStackTrace();
 		}
 	}
 
