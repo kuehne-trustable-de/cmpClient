@@ -21,28 +21,17 @@ import java.io.*;
 import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.security.GeneralSecurityException;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
+import java.nio.charset.StandardCharsets;
+import java.security.*;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.*;
 
 import org.bouncycastle.asn1.*;
-import org.bouncycastle.asn1.cmp.CMPCertificate;
-import org.bouncycastle.asn1.cmp.CertRepMessage;
-import org.bouncycastle.asn1.cmp.CertResponse;
-import org.bouncycastle.asn1.cmp.ErrorMsgContent;
-import org.bouncycastle.asn1.cmp.PKIBody;
-import org.bouncycastle.asn1.cmp.PKIFreeText;
-import org.bouncycastle.asn1.cmp.PKIHeader;
-import org.bouncycastle.asn1.cmp.PKIMessage;
-import org.bouncycastle.asn1.cmp.PKIStatusInfo;
-import org.bouncycastle.asn1.cmp.RevDetails;
-import org.bouncycastle.asn1.cmp.RevRepContent;
-import org.bouncycastle.asn1.cmp.RevReqContent;
+import org.bouncycastle.asn1.cmp.*;
 import org.bouncycastle.asn1.crmf.CertId;
 import org.bouncycastle.asn1.crmf.CertReqMessages;
+import org.bouncycastle.asn1.crmf.CertReqMsg;
 import org.bouncycastle.asn1.crmf.CertTemplateBuilder;
 import org.bouncycastle.asn1.pkcs.Attribute;
 import org.bouncycastle.asn1.x500.X500Name;
@@ -65,13 +54,20 @@ import org.bouncycastle.cert.crmf.jcajce.JcePKMACValuesCalculator;
 import org.bouncycastle.cert.jcajce.JcaX500NameUtil;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openssl.PEMParser;
+import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.ContentVerifierProvider;
 import org.bouncycastle.operator.MacCalculator;
 import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 import org.bouncycastle.pkcs.PKCSException;
 import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.openssl.PEMWriter;
+
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
 
 
 /**
@@ -82,22 +78,30 @@ public class CMPClient {
 	
     SecureRandom secRandom = new SecureRandom();
 
-	private String plainSecret = "foo123";
-	private String caUrl = "http://...,"; 
+	private ProtectedMessageHandler handler = null;
+	private boolean hmacSecretPresent = false;
+	private File p12ClientFile = null;
+	private String p12ClientSecret = "";
+	private String caUrl = "http://...,";
 	private String alias = "test";
-	boolean verbose = false;
+	private boolean verbose = false;
 
 
 	private CMPClient() {
         java.security.Security.addProvider( new BouncyCastleProvider() );
 	}
 	
-	public CMPClient(String caUrl, String alias, String plainSecret, boolean verbose) {
+	public CMPClient(String caUrl, String alias, ProtectedMessageHandler handler,
+					 File p12ClientFile, String p12ClientSecret,
+					 boolean hmacSecretPresent, boolean verbose) {
 		this();
 		
-		this.plainSecret = plainSecret;
+		this.handler = handler;
 		this.caUrl = caUrl; 
 		this.alias = alias;
+		this.p12ClientFile = p12ClientFile;
+		this.p12ClientSecret = p12ClientSecret;
+		this.hmacSecretPresent = hmacSecretPresent;
 		this.verbose = verbose;
 	}
 
@@ -117,7 +121,12 @@ public class CMPClient {
 		String mode = "Request";
 
 		String plainSecret = null;
-		String caUrl = null; 
+		String p12Secret = null;
+		String p12Alias = null;
+		String p12FileName = null;
+		String p12ClientSecret = null;
+		String p12ClientFileName = null;
+		String caUrl = null;
 		String alias = null;
 		String reason = "unspecified";
 		String inFileName = "test.csr";
@@ -161,6 +170,16 @@ public class CMPClient {
 						outForm = nArg.toUpperCase(Locale.ROOT);
 					} else if( "-o".equals(arg)) {
 						outFileName = nArg;
+					} else if( "-ks".equals(arg)) {
+						p12Secret = nArg;
+					} else if( "-ka".equals(arg)) {
+						p12Alias = nArg;
+					} else if( "-kf".equals(arg)) {
+						p12FileName = nArg;
+					} else if( "-cs".equals(arg)) {
+						p12ClientSecret = nArg;
+					} else if( "-cf".equals(arg)) {
+						p12ClientFileName = nArg;
 					}
 					
 				}else {
@@ -169,10 +188,6 @@ public class CMPClient {
 			}
 		}
 
-		if(plainSecret == null) {
-			System.err.println("'secret' must be provided! Exiting ...");
-			return 1;
-		}
 		if(caUrl == null) {
 			System.err.println("'caUrl' must be provided! Exiting ...");
 			return 1;
@@ -188,7 +203,54 @@ public class CMPClient {
 		}
 
 		try {
-			CMPClient client = new CMPClient( caUrl, alias, plainSecret, verbose);
+
+			boolean hmacSecretPresent = false;
+			File p12ClientFile = null;
+
+			ProtectedMessageHandler signer = null;
+			if( plainSecret != null && !plainSecret.isEmpty() ){
+				signer = new DigestSigner(plainSecret);
+				hmacSecretPresent = true;
+
+			}else{
+
+				if( p12FileName != null && !p12FileName.isEmpty() &&
+						p12Alias != null && !p12Alias.isEmpty() &&
+						p12Secret != null && !p12Secret.isEmpty() ) {
+
+					File p12File = new File(p12FileName);
+					if( !p12File.exists()) {
+						System.err.println("Keystore file '" + p12File + "' does not exist! Exiting ...");
+						return 1;
+					}
+					if( !p12File.canRead()) {
+						System.err.println("No read access to CSR file '" + p12File + "'! Exiting ...");
+						return 1;
+					}
+					KeyStore ks = KeyStore.getInstance("PKCS12");
+					ks.load(new FileInputStream(p12File), p12Secret.toCharArray());
+
+					signer = new KeystoreSigner(ks, p12Alias, p12Secret);
+
+				}else{
+					System.err.println("Either HMAC Secret or Keystore/Alias/Password must be provided! Exiting ...");
+					return 1;
+				}
+			}
+			if( p12ClientFileName != null && !p12ClientFileName.isEmpty()){
+				p12ClientFile = new File(p12ClientFileName);
+				if( !p12ClientFile.exists()) {
+					System.err.println("Client keystore file '" + p12ClientFile + "' does not exist! Exiting ...");
+					return 1;
+				}
+				if( !p12ClientFile.canRead()) {
+					System.err.println("No read access to CSR file '" + p12ClientFile + "'! Exiting ...");
+					return 1;
+				}
+			}
+
+
+			CMPClient client = new CMPClient( caUrl, alias, signer, p12ClientFile, p12ClientSecret, hmacSecretPresent, verbose);
 			if( "Request".equals(mode)) {
 
 				System.out.println("Requesting certificate from csr file '" + inFileName + "' ...");
@@ -252,7 +314,12 @@ public class CMPClient {
 		System.out.println("\nArguments:\n");
 		System.out.println("-u caURL\tCA URL (required)");
 		System.out.println("-a alias\tAlias configuration (required)");
-		System.out.println("-s secret\tCMP access secret (required)");
+		System.out.println("-s secret\tCMP access secret (option 1)");
+		System.out.println("-kf filename\tKeystore file name, PKCS12 type expected (option 2)");
+		System.out.println("-ks secret\tKeystore secret (option 2)");
+		System.out.println("-ka alias\tKeystore alias (option 2)");
+		System.out.println("-cf filename\tKeystore file name for client authentication, PKCS12 type expected");
+		System.out.println("-cs secret\tKeystore secret for client authentication");
 		System.out.println("-e reason\trevocation reason (required for revocation), valid values are");
 		System.out.println("\t\tkeyCompromise");
 		System.out.println("\t\tcACompromise");
@@ -316,7 +383,7 @@ public class CMPClient {
 		try {
 
 			// build a CMP request from the CSR
-			PKIMessage pkiRequest = buildCertRequest(certReqId, isCSR, plainSecret);
+			PKIMessage pkiRequest = buildCertRequest(certReqId, isCSR, handler);
 
 			byte[] requestBytes = pkiRequest.getEncoded();
 
@@ -324,7 +391,7 @@ public class CMPClient {
 			trace("cmp client calls url '"+caUrl+"' with alias '"+alias+"'");
 
 			// send and receive ..
-			byte[] responseBytes = sendHttpReq(caUrl + "/" + alias, requestBytes);
+			byte[] responseBytes = sendHttpReq(caUrl + "/" + alias, requestBytes, p12ClientFile, p12ClientSecret);
 
 			if (responseBytes == null) {
 				throw new GeneralSecurityException("remote connector returned 'null'");
@@ -391,7 +458,7 @@ public class CMPClient {
 
 			// send and receive ..
 			trace("revocation requestBytes : " + java.util.Base64.getEncoder().encodeToString(revocationRequestBytes));
-			byte[] responseBytes = sendHttpReq(caUrl + "/" + alias, revocationRequestBytes);
+			byte[] responseBytes = sendHttpReq(caUrl + "/" + alias, revocationRequestBytes, p12ClientFile, p12ClientSecret);
 			trace("revocation responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));
 
 			// handle the response
@@ -413,11 +480,11 @@ public class CMPClient {
 	 * build the CMP request message
 	 * @param certReqId the handle id for the request
 	 * @param isCSR input stream of the CSR file
-	 * @param hmacSecret the secret for the message authentication
+	 * @param signer an implementation for message authentication
 	 * @return the CMP request message
 	 * @throws GeneralSecurityException something cryptographic went wrong
 	 */
-	public PKIMessage buildCertRequest(long certReqId, final InputStream isCSR, final String hmacSecret)
+	public PKIMessage buildCertRequest(long certReqId, final InputStream isCSR, final ProtectedMessageHandler signer)
 			throws GeneralSecurityException {
 
 		PKCS10CertificationRequest p10Req = convertPemToPKCS10CertificationRequest(isCSR);
@@ -450,7 +517,7 @@ public class CMPClient {
 			throw new GeneralSecurityException(e);
 		}
 
-		return buildCertRequest(certReqId, p10Req.getSubject(), certExtList, keyInfo, hmacSecret);
+		return buildCertRequest(certReqId, p10Req.getSubject(), certExtList, keyInfo, signer);
 
 	}
 
@@ -461,12 +528,12 @@ public class CMPClient {
 	 * @param subjectDN The X500Name of the subject
 	 * @param certExtList a collection o extensions, eg SANS
 	 * @param keyInfo the identification data of the key
-	 * @param hmacSecret the secret for the message authentication
+	 * @param signer an implementation for message authentication
 	 * @return the CMP request message
 	 * @throws GeneralSecurityException something cryptographic went wrong
 	 */
 	public PKIMessage buildCertRequest(long certReqId, final X500Name subjectDN,
-			final Collection<Extension> certExtList, final SubjectPublicKeyInfo keyInfo, final String hmacSecret)
+			final Collection<Extension> certExtList, final SubjectPublicKeyInfo keyInfo, final ProtectedMessageHandler signer)
 			throws GeneralSecurityException {
 
 		CertificateRequestMessageBuilder msgbuilder = new CertificateRequestMessageBuilder(
@@ -499,16 +566,17 @@ public class CMPClient {
 
 			ProtectedPKIMessageBuilder pbuilder = getPKIBuilder(issuerDN, subjectDN);
 
-			CertReqMessages msgs = new CertReqMessages(msg.toASN1Structure());
-			PKIBody pkibody = new PKIBody(PKIBody.TYPE_INIT_REQ, msgs);
-			pbuilder.setBody(pkibody);
+//			pbuilder.addGeneralInfo(new InfoTypeAndValue(CMPObjectIdentifiers.regInfo_utf8Pairs, new DERUTF8String("CertType?Server%")));
 
-			MacCalculator macCalculator = getMacCalculator(hmacSecret);
-			ProtectedPKIMessage message = pbuilder.build(macCalculator);
+			CertReqMessages msgs = new CertReqMessages(msg.toASN1Structure());
+//			PKIBody pkibody = new PKIBody(PKIBody.TYPE_INIT_REQ, msgs);
+			PKIBody pkibody = new PKIBody(PKIBody.TYPE_CERT_REQ, msgs);
+			pbuilder.setBody(pkibody);
+			ProtectedPKIMessage message = signer.signMessage(pbuilder);
 
 			return message.toASN1Structure();
 
-		} catch (CRMFException | CMPException | IOException crmfe) {
+		} catch (CRMFException | IOException crmfe) {
 			log("Exception occured processing extensions", crmfe);
 			throw new GeneralSecurityException(crmfe.getMessage());
 		}
@@ -550,8 +618,8 @@ public class CMPClient {
 				log("sender nonce differ from recepient nonce "
 						+ java.util.Base64.getEncoder().encodeToString(pkiHeaderReq.getSenderNonce().getOctets())
 						+ " != " + java.util.Base64.getEncoder().encodeToString(asn1Oct.getOctets()));
+				throw new GeneralSecurityException("Sender / Recip nonce mismatch");
 			}
-			throw new GeneralSecurityException("Sender / Recip nonce mismatch");
 		}
 		/*
 		 * if( !pkiHeaderReq.getSenderKID().equals(pkiHeaderResp.getRecipKID())){
@@ -672,14 +740,20 @@ public class CMPClient {
 		if (generalPKIMessage.hasProtection()) {
 			ProtectedPKIMessage protectedPKIMsg = new ProtectedPKIMessage(generalPKIMessage);
 
-			if( protectedPKIMsg.hasPasswordBasedMacProtection()) {
-				if (protectedPKIMsg.verify(getMacCalculatorBuilder(), plainSecret.toCharArray())) {
-					trace("received response message verified successfully by HMAC");
-				} else {
-					throw new GeneralSecurityException("received response message failed verification (by HMAC)!");
-				}
+			if( protectedPKIMsg.hasPasswordBasedMacProtection() && !hmacSecretPresent) {
+				throw new GeneralSecurityException("MacProtection used by the server, but no HMAC secret present!");
+			}
+
+			if( handler.verifyMessage(protectedPKIMsg)){
+//			if( protectedPKIMsg.hasPasswordBasedMacProtection()) {
+
+//				if (protectedPKIMsg.verify(getMacCalculatorBuilder(), plainSecret.toCharArray())) {
+//					trace("received response message verified successfully by HMAC");
+//				} else {
+//					throw new GeneralSecurityException("received response message failed verification (by HMAC)!");
+//				}
 			}else{
-				throw new GeneralSecurityException("received response message has unexpected protection scheme, pbe expected!");
+				throw new GeneralSecurityException("received response message has unexpected protection scheme!");
 			}
 		} else {
 			warn("received response message contains NO content protection!");
@@ -698,13 +772,14 @@ public class CMPClient {
 	 * @throws IOException io interaction failed somehow
 	 * @throws CRMFException certificate request related problem
 	 * @throws CMPException CMP related problem
+	 * @throws GeneralSecurityException General security problem
 	 */
-	  public byte[] buildRevocationRequest( long certRevId, final X500Name issuerDN, final X500Name subjectDN, final BigInteger serial, final CRLReason crlReason) 
-	          throws IOException, CRMFException,
-	          CMPException {
+	  public byte[] buildRevocationRequest( long certRevId, final X500Name issuerDN, final X500Name subjectDN, final BigInteger serial, final CRLReason crlReason)
+			  throws IOException, CRMFException,
+			  CMPException, GeneralSecurityException {
 	  
 	  
-	    // Cert template too tell which cert we want to revoke
+	    // Cert template to tell which cert we want to revoke
 	    CertTemplateBuilder myCertTemplate = new CertTemplateBuilder();
 	    myCertTemplate.setIssuer(issuerDN);
 	    myCertTemplate.setSerialNumber(new ASN1Integer(serial));
@@ -729,11 +804,9 @@ public class CMPClient {
 	    PKIBody pkiBody = new PKIBody(PKIBody.TYPE_REVOCATION_REQ, myRevReqContent); // revocation request
 	    pbuilder.setBody(pkiBody);
 	    
-	    // get the MacCalculator
-	    MacCalculator macCalculator = getMacCalculator(plainSecret);
-	    ProtectedPKIMessage message = pbuilder.build(macCalculator);
-	    
-	    org.bouncycastle.asn1.cmp.PKIMessage pkiMessage = message.toASN1Structure();
+	    ProtectedPKIMessage message = handler.signMessage(pbuilder);
+
+		org.bouncycastle.asn1.cmp.PKIMessage pkiMessage = message.toASN1Structure();
 
     	trace( "sender nonce : " + Base64.toBase64String( pkiMessage.getHeader().getSenderNonce().getOctets() ));
 
@@ -932,6 +1005,7 @@ public class CMPClient {
 		GeneralName sender = new GeneralName(senderDN);
 		GeneralName recipient = new GeneralName(recipientDN);
 		ProtectedPKIMessageBuilder pbuilder = new ProtectedPKIMessageBuilder(sender, recipient);
+
 		pbuilder.setMessageTime(new Date());
 
 		if (senderNonce != null) {
@@ -1007,7 +1081,7 @@ public class CMPClient {
 	 * @throws CRMFException creation of the calculator failed
 	 * @return the PKMACBuilder object withdefault algorithms
 	 */
-	public PKMACBuilder getMacCalculatorBuilder() throws CRMFException {
+	public static PKMACBuilder getMacCalculatorBuilder() throws CRMFException {
 
 		JcePKMACValuesCalculator jcePkmacCalc = new JcePKMACValuesCalculator();
 		final AlgorithmIdentifier digAlg = new AlgorithmIdentifier(new ASN1ObjectIdentifier("1.3.14.3.2.26")); // SHA1
@@ -1022,7 +1096,7 @@ public class CMPClient {
 	 * @return the HMACCalculator object
 	 * @throws CRMFException creation of the calculator failed
 	 */
-	public MacCalculator getMacCalculator(final String hmacSecret) throws CRMFException {
+	public static MacCalculator getMacCalculator(final String hmacSecret) throws CRMFException {
 		PKMACBuilder macbuilder = getMacCalculatorBuilder();
 		return macbuilder.build(hmacSecret.toCharArray());
 	}
@@ -1063,20 +1137,57 @@ public class CMPClient {
 	 * @return the received bytes
 	 * @throws IOException io handling went wrong
 	 */
-	public byte[] sendHttpReq(final String requestUrl, final byte[] requestBytes) throws IOException {
+	public byte[] sendHttpReq(final String requestUrl, final byte[] requestBytes, final File keyFile, final String keyPassword) throws IOException, GeneralSecurityException {
 
 		trace("Sending request to: " + requestUrl);
 
 		long startTime = System.currentTimeMillis();
 
 		URL url = new URL(requestUrl);
-		HttpURLConnection con = (HttpURLConnection) url.openConnection();
+
+		HttpURLConnection con = null;
+
+		if( "https".equalsIgnoreCase(url.getProtocol())) {
+
+			trace("sending message to TLS endpoint");
+
+			try {
+				KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance("SunX509");
+				if( keyFile != null) {
+					trace("using client keystore at '" + keyFile.getAbsolutePath() + "'");
+
+					KeyStore keyStore = KeyStore.getInstance("PKCS12");
+
+					InputStream keyInput = new FileInputStream(keyFile);
+					keyStore.load(keyInput, keyPassword.toCharArray());
+					keyInput.close();
+
+					keyManagerFactory.init(keyStore, keyPassword.toCharArray());
+				}
+
+				SSLContext context = SSLContext.getInstance("TLS");
+				context.init(
+						keyManagerFactory.getKeyManagers(),
+						null,
+						new SecureRandom()
+				);
+
+				HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
+				conn.setSSLSocketFactory(context.getSocketFactory());
+				con = conn;
+			} catch(Exception ex){
+				throw new GeneralSecurityException(ex);
+			}
+		}else {
+			con = (HttpURLConnection) url.openConnection();
+		}
 
 		// we are going to do a POST
 		con.setDoOutput(true);
 		con.setRequestMethod("POST");
 
-		con.setRequestProperty("Content-Type", "application/octet-stream;charset=UTF-8");
+//		con.setRequestProperty("Content-Type", "application/octet-stream;charset=UTF-8");
+		con.setRequestProperty("Content-Type", "application/pkixcmp");
 
 		java.io.OutputStream os = con.getOutputStream();
 		os.write(requestBytes);
@@ -1133,4 +1244,85 @@ public class CMPClient {
 		}
 	}
 
+}
+
+interface ProtectedMessageHandler {
+	ProtectedPKIMessage signMessage(final ProtectedPKIMessageBuilder builder) throws GeneralSecurityException;
+	boolean verifyMessage(final ProtectedPKIMessage message) throws GeneralSecurityException;
+}
+
+
+class DigestSigner implements ProtectedMessageHandler {
+
+	final private String hmacSecret;
+	public DigestSigner(String hmacSecret1){
+		this.hmacSecret = hmacSecret1;
+	}
+
+	@Override
+	public ProtectedPKIMessage signMessage(ProtectedPKIMessageBuilder builder) throws GeneralSecurityException {
+		System.out.println("in DigestSigner.signMessage ...");
+		try {
+			MacCalculator macCalculator = CMPClient.getMacCalculator(hmacSecret);
+			return builder.build(macCalculator);
+		} catch (CRMFException | CMPException e) {
+			throw new GeneralSecurityException(e);
+		}
+	}
+
+	@Override
+	public boolean verifyMessage(ProtectedPKIMessage message) throws GeneralSecurityException {
+		System.out.println("in DigestSigner.verifyMessage ...");
+		try {
+			return message.verify(CMPClient.getMacCalculatorBuilder(), hmacSecret.toCharArray());
+		} catch (CMPException | CRMFException e) {
+			throw new GeneralSecurityException(e);
+		}
+	}
+}
+
+class KeystoreSigner implements ProtectedMessageHandler {
+
+	final private KeyStore ks;
+	final private String ksAlias;
+	final private String ksSecret;
+
+	public KeystoreSigner(KeyStore ks, String ksAlias, String ksSecret){
+		this.ks = ks;
+		this.ksAlias = ksAlias;
+		this.ksSecret = ksSecret;
+	}
+
+	@Override
+	public ProtectedPKIMessage signMessage(ProtectedPKIMessageBuilder builder) throws GeneralSecurityException {
+
+		System.out.println("in KeystoreSigner.signMessage ...");
+
+		PrivateKey privKey = (PrivateKey) (ks.getKey(ksAlias, ksSecret.toCharArray()));
+
+		try {
+			ContentSigner msgsigner = new JcaContentSignerBuilder("SHA256WithRSAEncryption")
+					.setProvider(BouncyCastleProvider.PROVIDER_NAME)
+					.build(privKey);
+			return builder.build(msgsigner);
+		} catch (OperatorCreationException | CMPException e) {
+			throw new GeneralSecurityException(e);
+		}
+	}
+
+	@Override
+	public boolean verifyMessage(ProtectedPKIMessage message) throws GeneralSecurityException {
+
+		System.out.println("in KeystoreSigner.verifyMessage ...");
+
+		try {
+			X509Certificate certificate = (X509Certificate)(ks.getCertificate(ksAlias));
+			ContentVerifierProvider verifierProvider = new JcaContentVerifierProviderBuilder()
+						.setProvider(BouncyCastleProvider.PROVIDER_NAME)
+					.build(certificate);
+			return message.verify(verifierProvider);
+		} catch (OperatorCreationException | CMPException | KeyStoreException e) {
+			throw new GeneralSecurityException(e);
+		}
+	}
 }
