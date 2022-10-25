@@ -624,7 +624,7 @@ public class CMPClient {
 					PKIFreeText freeText = pkiStatusInfo.getStatusString();
 					if (freeText != null) {
 						for (int j = 0; j < freeText.size(); j++) {
-							statusText = freeText.getStringAt(j) + "\n";
+							statusText = freeText.getStringAtUTF8(j) + "\n";
 						}
 					}
 				}
@@ -822,7 +822,7 @@ public class CMPClient {
 			if (errMsgContent.getPKIStatusInfo() != null) {
 				PKIFreeText freeText = errMsgContent.getPKIStatusInfo().getStatusString();
 				for (int i = 0; i < freeText.size(); i++) {
-					trace("#" + i + ": " + freeText.getStringAt(i));
+					log("#" + i + ": " + freeText.getStringAtUTF8(i));
 				}
 			}
 		} catch (NullPointerException npe) { // NOSONAR
