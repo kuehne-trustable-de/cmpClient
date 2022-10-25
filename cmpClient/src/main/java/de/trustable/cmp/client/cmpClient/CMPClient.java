@@ -17,43 +17,28 @@ package de.trustable.cmp.client.cmpClient;
 
  */
 
-import java.io.*;
-import java.math.BigInteger;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.security.*;
-import java.security.cert.CertificateFactory;
-import java.security.cert.X509Certificate;
-import java.util.*;
-
+import de.trustable.cmp.crmf.CertificateRequestMessageBuilder;
 import org.bouncycastle.asn1.*;
 import org.bouncycastle.asn1.cmp.*;
+import org.bouncycastle.asn1.crmf.AttributeTypeAndValue;
 import org.bouncycastle.asn1.crmf.CertId;
 import org.bouncycastle.asn1.crmf.CertReqMessages;
-import org.bouncycastle.asn1.crmf.CertReqMsg;
 import org.bouncycastle.asn1.crmf.CertTemplateBuilder;
 import org.bouncycastle.asn1.pkcs.Attribute;
 import org.bouncycastle.asn1.x500.X500Name;
-import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
-import org.bouncycastle.asn1.x509.CRLReason;
-import org.bouncycastle.asn1.x509.Extension;
-import org.bouncycastle.asn1.x509.Extensions;
-import org.bouncycastle.asn1.x509.ExtensionsGenerator;
-import org.bouncycastle.asn1.x509.GeneralName;
-import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
+import org.bouncycastle.asn1.x509.*;
 import org.bouncycastle.cert.cmp.CMPException;
 import org.bouncycastle.cert.cmp.GeneralPKIMessage;
 import org.bouncycastle.cert.cmp.ProtectedPKIMessage;
 import org.bouncycastle.cert.cmp.ProtectedPKIMessageBuilder;
 import org.bouncycastle.cert.crmf.CRMFException;
 import org.bouncycastle.cert.crmf.CertificateRequestMessage;
-import org.bouncycastle.cert.crmf.CertificateRequestMessageBuilder;
 import org.bouncycastle.cert.crmf.PKMACBuilder;
 import org.bouncycastle.cert.crmf.jcajce.JcePKMACValuesCalculator;
 import org.bouncycastle.cert.jcajce.JcaX500NameUtil;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openssl.PEMParser;
+import org.bouncycastle.openssl.PEMWriter;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.ContentVerifierProvider;
 import org.bouncycastle.operator.MacCalculator;
@@ -63,11 +48,18 @@ import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 import org.bouncycastle.pkcs.PKCSException;
 import org.bouncycastle.util.encoders.Base64;
-import org.bouncycastle.openssl.PEMWriter;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
+import java.io.*;
+import java.math.BigInteger;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.security.*;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+import java.util.*;
 
 
 /**
@@ -207,7 +199,7 @@ public class CMPClient {
 			boolean hmacSecretPresent = false;
 			File p12ClientFile = null;
 
-			ProtectedMessageHandler signer = null;
+			ProtectedMessageHandler signer;
 			if( plainSecret != null && !plainSecret.isEmpty() ){
 				signer = new DigestSigner(plainSecret);
 				hmacSecretPresent = true;
@@ -536,8 +528,16 @@ public class CMPClient {
 			final Collection<Extension> certExtList, final SubjectPublicKeyInfo keyInfo, final ProtectedMessageHandler signer)
 			throws GeneralSecurityException {
 
+		AttributeTypeAndValue regInfoATaV = new AttributeTypeAndValue(
+				CMPObjectIdentifiers.regInfo_utf8Pairs,
+				new DERUTF8String("CertType?Server%"));
+		AttributeTypeAndValue[] atavArr = new AttributeTypeAndValue[1];
+		atavArr[0] = regInfoATaV;
+
 		CertificateRequestMessageBuilder msgbuilder = new CertificateRequestMessageBuilder(
 				BigInteger.valueOf(certReqId));
+
+		msgbuilder.setAttributeTypeAndValues(atavArr);
 
 		X500Name issuerDN = X500Name.getInstance(new X500Name("CN=AdminCA1").toASN1Primitive());
 
@@ -550,12 +550,13 @@ public class CMPClient {
 			for (Extension ext : certExtList) {
 				trace("Csr Extension : " + ext.getExtnId().getId() + " -> " + ext.getExtnValue());
 				boolean critical = ext.isCritical();
-				msgbuilder.addExtension(ext.getExtnId(), critical, ext.getParsedValue());
+				msgbuilder.addExtension(ext.getExtnId(), critical, ext.getEncoded());
 			}
 
 			msgbuilder.setPublicKey(keyInfo);
-			GeneralName sender = new GeneralName(subjectDN);
-			msgbuilder.setAuthInfoSender(sender);
+
+//			GeneralName sender = new GeneralName(subjectDN);
+//			msgbuilder.setAuthInfoSender(sender);
 
 			// RAVerified POP
 			// I am a  client, I do trust my master!
@@ -734,7 +735,7 @@ public class CMPClient {
 		return null;
 	}
 
-	private GeneralPKIMessage buildPKIMessage(byte[] responseBytes) throws IOException, CMPException, CRMFException, GeneralSecurityException {
+	private GeneralPKIMessage buildPKIMessage(byte[] responseBytes) throws IOException, GeneralSecurityException {
 		GeneralPKIMessage generalPKIMessage = new GeneralPKIMessage(responseBytes);
 		printPKIMessageInfo(generalPKIMessage);
 		if (generalPKIMessage.hasProtection()) {
@@ -1145,7 +1146,7 @@ public class CMPClient {
 
 		URL url = new URL(requestUrl);
 
-		HttpURLConnection con = null;
+		HttpURLConnection con;
 
 		if( "https".equalsIgnoreCase(url.getProtocol())) {
 
