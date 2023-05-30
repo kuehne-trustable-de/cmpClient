@@ -2,7 +2,7 @@ package de.trustable.cmp.client.cmpClient;
 
 import de.trustable.cmp.client.ProtectedMessageHandler;
 import org.bouncycastle.asn1.x500.X500Name;
-import org.bouncycastle.openssl.PEMWriter;
+import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -123,7 +123,7 @@ public class CMPCmdLineClient {
 
         try {
 
-            File p12ClientFile = null;
+            File p12ClientFile;
 
             ProtectedMessageHandler signer;
             if( plainSecret != null && !plainSecret.isEmpty() ){
@@ -250,6 +250,7 @@ public class CMPCmdLineClient {
         System.out.println("-kf filename\tKeystore file name for CMP message authentication, PKCS12 type expected (option 2)");
         System.out.println("-ks secret\tKeystore secret (option 2)");
         System.out.println("-ka alias\tKeystore alias (option 2)");
+        System.out.println("-ci issuer\tX500 name of the issuer.");
         System.out.println("-cf filename\tKeystore file name for HTTPS client authentication, PKCS12 type expected");
         System.out.println("-cs secret\tKeystore secret for HTTPS client authentication. An alias is not required for this store");
         System.out.println("-sm\tsend single PKIMessage object, only");
@@ -283,7 +284,6 @@ public class CMPCmdLineClient {
 
     }
 
-
     public void signCertificateRequest(final File csrFile, final File certFile, final String outForm)
             throws GeneralSecurityException, IOException {
 
@@ -296,7 +296,7 @@ public class CMPCmdLineClient {
                 osCert.write(cert.getEncoded());
             }
         }else{
-            try(PEMWriter pemWriter = new PEMWriter(new FileWriter(certFile))){
+            try(JcaPEMWriter pemWriter = new JcaPEMWriter(new FileWriter(certFile))){
                 pemWriter.writeObject(cert);
             }
         }
@@ -306,7 +306,5 @@ public class CMPCmdLineClient {
         }else{
             LOGGER.info("creation of certificate written to file '" + certFile.getName() +"'");
         }
-
     }
-
 }

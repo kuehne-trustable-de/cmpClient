@@ -116,6 +116,7 @@ public class CMPClientConfig {
 
         if( issuerName != null ) {
             msgbuilder.setIssuer(issuerName);
+
         }
     }
 }

@@ -51,11 +51,11 @@ public class CmpClientTest
      */
     public void testApp(){
     	String[] emptyArgs = {};
-		int ret = CMPClient.handleArgs(emptyArgs);
+		int ret = CMPCmdLineClient.handleArgs(emptyArgs);
 		Assert.assertEquals("arguments required", 1, ret);
 		
     	String[] args = {"-h"};
-		ret = CMPClient.handleArgs(args);
+		ret = CMPCmdLineClient.handleArgs(args);
 		Assert.assertEquals("help is a valid option ", 0, ret);		
     }
 }

@@ -18,7 +18,6 @@ package de.trustable.cmp.client.cmpClient;
  */
 
 import de.trustable.cmp.client.ProtectedMessageHandler;
-import de.trustable.cmp.client.RemoteTargetHandler;
 import org.bouncycastle.asn1.*;
 import org.bouncycastle.asn1.cmp.*;
 import org.bouncycastle.asn1.crmf.CertId;
@@ -80,26 +79,6 @@ public class CMPClientImpl {
         Security.addProvider( new BouncyCastleProvider() );
 	}
 
-	public CMPClientImpl(String caUrl, String alias,
-						 ProtectedMessageHandler handler,
-						 RemoteTargetHandler remoteTargetHandler,
-						 InputStream p12ClientFile, String p12ClientSecret,
-						 boolean wrapInMessages,
-						 boolean verbose) {
-
-		this();
-
-		cmpClientConfig = new CMPClientConfig();
-
-		cmpClientConfig.setMessageHandler(handler);
-		cmpClientConfig.setRemoteTargetHandler(remoteTargetHandler);
-		cmpClientConfig.setCaUrl(caUrl);
-		cmpClientConfig.setCmpAlias(alias);
-		cmpClientConfig.setP12ClientStore(p12ClientFile);
-		cmpClientConfig.setP12ClientSecret(p12ClientSecret);
-		cmpClientConfig.setMultipleMessages(wrapInMessages);
-		cmpClientConfig.setVerbose(verbose);
-	}
 	public CMPClientImpl(final CMPClientConfig cmpClientConfig){
 		this();
 		this.cmpClientConfig = cmpClientConfig;
@@ -298,19 +277,14 @@ public class CMPClientImpl {
 									   final ProtectedMessageHandler messageHandler)
 			throws GeneralSecurityException {
 
-		JcaCertificateRequestMessageBuilder msgbuilder = new JcaCertificateRequestMessageBuilder(
-				BigInteger.valueOf(certReqId));
-/*
-		AttributeTypeAndValue regInfoATaV = new AttributeTypeAndValue(
-				CMPObjectIdentifiers.regInfo_utf8Pairs,
-				new DERUTF8String("CertType?Server%"));
-		AttributeTypeAndValue[] atavArr = new AttributeTypeAndValue[1];
-		atavArr[0] = regInfoATaV;
-*/
-
-		msgbuilder.setRegInfo(cmpClientConfig.getATaVArr());
+		JcaCertificateRequestMessageBuilder msgbuilder = new JcaCertificateRequestMessageBuilder(BigInteger.valueOf(certReqId));
+		if( cmpClientConfig.getATaVArr() != null && cmpClientConfig.getATaVArr().length > 0) {
+			msgbuilder.setRegInfo(cmpClientConfig.getATaVArr());
+			trace("added " + cmpClientConfig.getATaVArr().length + " ATaVs to the request");
+		}
 
 		msgbuilder.setSubject(subjectDN);
+		trace("set subject to '" + subjectDN + "'");
 
 		X500Name recipientDN = new X500Name( new RDN[0] );
 		try {
@@ -597,21 +571,34 @@ public class CMPClientImpl {
 		RevDetails myRevDetails = RevDetails.getInstance(seq);
 		RevReqContent myRevReqContent = new RevReqContent(myRevDetails);
 
+		ProtectedMessageHandler protectedMessageHandler = cmpClientConfig.getMessageHandler();
 
 		// get a builder
-		ProtectedPKIMessageBuilder pbuilder = getPKIBuilder(issuerDN, subjectDN);
+		X500Name sender = protectedMessageHandler.getSender(subjectDN);
+		ProtectedPKIMessageBuilder pbuilder = getPKIBuilder(issuerDN, sender);
 
 		// create the body
 		PKIBody pkiBody = new PKIBody(PKIBody.TYPE_REVOCATION_REQ, myRevReqContent); // revocation request
 		pbuilder.setBody(pkiBody);
 
-		ProtectedPKIMessage message = cmpClientConfig.getMessageHandler().signMessage(pbuilder);
+		protectedMessageHandler.addCertificate(pbuilder);
+
+		if (cmpClientConfig.isImplicitConfirm()) {
+			pbuilder.addGeneralInfo(new InfoTypeAndValue(CMPObjectIdentifiers.it_implicitConfirm, DERNull.INSTANCE));
+		}
+
+		ProtectedPKIMessage message = protectedMessageHandler.signMessage(pbuilder);
 
 		PKIMessage pkiMessage = message.toASN1Structure();
-
 		trace( "sender nonce : " + Base64.toBase64String( pkiMessage.getHeader().getSenderNonce().getOctets() ));
 
-		return pkiMessage.getEncoded();
+		ASN1Object requestContent = pkiMessage;
+		if(cmpClientConfig.isMultipleMessages()){
+			trace("wrapping PKIMessage into PKIMessages");
+			requestContent = new PKIMessages(pkiMessage);
+		}
+
+		return requestContent.getEncoded();
 	}
 
 
@@ -918,19 +905,6 @@ public class CMPClientImpl {
 		return csr;
 	}
 
-	/**
-	 * build a stringified digest ofd a byte array
-	 * @param content the byte array of
-	 * @return the base64 string
-	 * @throws GeneralSecurityException something cryptographic went wrong
-	 */
-	String getHashAsBase64(byte[] content) throws GeneralSecurityException {
-		MessageDigest md = MessageDigest.getInstance("SHA-256");
-		md.update(content);
-		byte[] digest = md.digest();
-		return (Base64.toBase64String(digest));
-	}
-
 	void warn(String msg){
 		LOGGER.warn(msg);
 	}
@@ -945,7 +919,8 @@ public class CMPClientImpl {
 
 	void trace(String msg){
 		if(cmpClientConfig.isVerbose()) {
-			LOGGER.debug(msg);
+//			LOGGER.debug(msg);
+			LOGGER.info(msg);
 		}
 	}
 

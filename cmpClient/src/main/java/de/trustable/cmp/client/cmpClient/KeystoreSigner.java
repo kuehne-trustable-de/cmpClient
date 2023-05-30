@@ -100,12 +100,10 @@ class KeystoreSigner implements ProtectedMessageHandler {
         try {
             X509CertificateHolder certificateHolder = new X509CertificateHolder(signerCertificate.getEncoded());
             pbuilder.addCMPCertificate(certificateHolder);
+            LOGGER.debug("adding protection certificate " + certificateHolder.getSubject());
         } catch (IOException | CertificateEncodingException e) {
             LOGGER.info("problem adding signer certificate", e );
         }
     }
 
-    public Certificate getSignerCertificate() {
-        return this.signerCertificate;
-    }
 }

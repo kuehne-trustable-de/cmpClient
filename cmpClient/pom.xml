@@ -96,7 +96,7 @@
 				<configuration>
 					<archive>
 						<manifest>
-							<mainClass>de.trustable.cmp.client.cmpClient.CMPClient</mainClass>
+							<mainClass>de.trustable.cmp.client.cmpClient.CMPCmdLineClient</mainClass>
 							<addClasspath>true</addClasspath>
 							<classpathPrefix>dependency-jars/</classpathPrefix>
 						</manifest>
@@ -143,7 +143,7 @@
 				<configuration>
 					<archive>
 						<manifest>
-							<mainClass>de.trustable.cmp.client.cmpClient.CMPClient</mainClass>
+							<mainClass>de.trustable.cmp.client.cmpClient.CMPCmdLineClient</mainClass>
 						</manifest>
 					</archive>
 	                <descriptorRefs>

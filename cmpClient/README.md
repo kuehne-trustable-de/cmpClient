@@ -5,7 +5,7 @@ Simple CMP Client to request or revoke a certificate using the CMP protocol, bas
 Build the project using maven: 'mvn clean install' .
 Invoke the created jar and list the options:
 
-`java -jar cmpClient-1.1.0-jar-with-dependencies.jar -h`
+`java -jar cmpClient-2.0.0-jar-with-dependencies.jar -h`
 
 The cmpClient expects a CSR file to be available as a file (after the option `-i` ). Tom perform a revocation  a 
 certificate file is expected (after the option `-o` ). 
