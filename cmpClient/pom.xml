@@ -10,7 +10,7 @@
 	<packaging>jar</packaging>
 
 	<name>cmpClient</name>
-	<description>Simple command line client and API to request or revoke a certificate using the CMP protocol, based on Bouncy Castle</description>
+	<description>Simple command line client and API to request / revoke a certificate using the CMP protocol, based on Bouncy Castle</description>
 	
 	<url>https://github.com/kuehne-trustable-de/cmpClient</url>
 
