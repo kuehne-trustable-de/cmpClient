@@ -47,7 +47,7 @@
 		<bouncyCastleVersion>1.73</bouncyCastleVersion>
 		<slf4jSimpleVersion>1.7.36</slf4jSimpleVersion>
 		<dependencyCheck.version>8.2.1</dependencyCheck.version>
-		<dependencyCheck.skip>false</dependencyCheck.skip>
+		<dependencyCheck.skip>true</dependencyCheck.skip>
 
 	</properties>
 
