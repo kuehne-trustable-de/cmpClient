@@ -51,16 +51,12 @@ import org.slf4j.LoggerFactory;
 import java.io.*;
 import java.math.BigInteger;
 import java.security.GeneralSecurityException;
-import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Date;
-import java.util.Random;
+import java.util.*;
 
 
 /**
@@ -84,14 +80,14 @@ public class CMPClientImpl {
 		this.cmpClientConfig = cmpClientConfig;
 	}
 
-	public X509Certificate signCertificateRequest(final InputStream isCSR)
+	public CertificateResponseContent signCertificateRequest(final InputStream isCSR)
 			throws GeneralSecurityException {
 
 		PKCS10CertificationRequest p10Req = convertPemToPKCS10CertificationRequest(isCSR);
 		return signCertificateRequest(p10Req);
 	}
 
-	public X509Certificate signCertificateRequest(final PKCS10CertificationRequest p10Req)
+	public CertificateResponseContent signCertificateRequest(final PKCS10CertificationRequest p10Req)
 			throws GeneralSecurityException {
 
 		long certReqId = secRandom.nextLong();
@@ -303,9 +299,6 @@ public class CMPClientImpl {
 			// I am a  client, I do trust my master!
 			msgbuilder.setProofOfPossessionRaVerified();
 
-//			msgbuilder.setIssuer(new X500Name("PSEUDONYM=TEST_BASIC_SSL_ID")); //TEST_BASIC_SSL_ID
-//			msgbuilder.setIssuer(new X500Name(cmpClientConfig.getIssuerName())); //TEST_BASIC_SSL_ID
-
 			cmpClientConfig.handleIssuer(msgbuilder);
 
 			CertificateRequestMessage msg = msgbuilder.build();
@@ -352,9 +345,11 @@ public class CMPClientImpl {
 	 * @throws CMPException CMP related problem
 	 * @throws GeneralSecurityException something cryptographic went wrong
 	 */
-	public X509Certificate readCertResponse(final byte[] responseBytes,
+	public CertificateResponseContent readCertResponse(final byte[] responseBytes,
 											final PKIMessage pkiMessageReq)
 			throws IOException, CRMFException, CMPException, GeneralSecurityException {
+
+		CertificateResponseContent responseContent = new CertificateResponseContent();
 
 		PKIMessage pkiMessage = getPkiMessage(responseBytes);
 
@@ -390,15 +385,17 @@ public class CMPClientImpl {
 		 */
 
 		if (!pkiHeaderReq.getTransactionID().equals(pkiHeaderResp.getTransactionID())) {
-			ASN1OctetString asn1Oct = pkiHeaderResp.getTransactionID();
-			if (asn1Oct == null) {
-				log("transaction id == null");
-			} else {
-				log("transaction id differ between request and response: "
-						+ java.util.Base64.getEncoder().encodeToString(pkiHeaderReq.getTransactionID().getOctets())
-						+ " != " + java.util.Base64.getEncoder().encodeToString(asn1Oct.getOctets()));
+			if( cmpClientConfig.isCheckTransactionIdMatch()) {
+				ASN1OctetString asn1Oct = pkiHeaderResp.getTransactionID();
+				if (asn1Oct == null) {
+					log("transaction id == null");
+				} else {
+					log("transaction id differ between request and response: "
+							+ java.util.Base64.getEncoder().encodeToString(pkiHeaderReq.getTransactionID().getOctets())
+							+ " != " + java.util.Base64.getEncoder().encodeToString(asn1Oct.getOctets()));
+				}
+				throw new GeneralSecurityException("Sender / Recip Transaction Id mismatch");
 			}
-			throw new GeneralSecurityException("Sender / Recip Transaction Id mismatch");
 		}
 
 		final PKIBody body = pkiMessage.getBody();
@@ -412,18 +409,8 @@ public class CMPClientImpl {
 			// certificate successfully generated
 			CertRepMessage certRepMessage = CertRepMessage.getInstance(body.getContent());
 
-			try {
-				// CMPCertificate[] cmpCertArr = certRepMessage.getCaPubs();
-				CMPCertificate[] cmpCertArr = pkiMessage.getExtraCerts();
-				log("CMP Response body contains " + cmpCertArr.length + " extra certificates");
-				for (int i = 0; i < cmpCertArr.length; i++) {
-					CMPCertificate cmpCert = cmpCertArr[i];
-					trace("Added CA '" + cmpCert.getX509v3PKCert().getSubject() + "' from CMP Response body");
-					// store if required ...
-				}
-			} catch (NullPointerException npe) { // NOSONAR
-				// just ignore
-			}
+			handleExtraCerts(certRepMessage.getCaPubs(), responseContent);
+			handleExtraCerts(pkiMessage.getExtraCerts(), responseContent);
 
 			CertResponse[] respArr = certRepMessage.getResponse();
 			if (respArr == null || (respArr.length == 0)) {
@@ -446,10 +433,11 @@ public class CMPClientImpl {
 					PKIFreeText freeText = pkiStatusInfo.getStatusString();
 					if (freeText != null) {
 						for (int j = 0; j < freeText.size(); j++) {
-							statusText = freeText.getStringAt(j) + "\n";
+							statusText += freeText.getStringAt(j) + "\n";
 						}
 					}
 				}
+				responseContent.setMessage(statusText);
 
 				if ((respArr[i].getCertifiedKeyPair() == null)
 						|| (respArr[i].getCertifiedKeyPair().getCertOrEncCert() == null)) {
@@ -474,10 +462,8 @@ public class CMPClientImpl {
 
 						X509Certificate[] certArray = certificateChain.toArray(new X509Certificate[0]);
 
-						X509Certificate cert = certArray[0];
-						trace("#" + i + ": " + cert);
-
-						return cert;
+						responseContent.setCreatedCertificate( certArray[0]);
+						return responseContent;
 					}
 				}
 			}
@@ -487,6 +473,37 @@ public class CMPClientImpl {
 
 		return null;
 	}
+
+	private void handleExtraCerts(final CMPCertificate[] cmpCertArr, CertificateResponseContent responseContent) throws GeneralSecurityException, IOException {
+		if( cmpCertArr == null){
+			// no additional certs
+			return;
+		}
+
+		CertificateFactory factory = CertificateFactory.getInstance("X.509");
+
+		LOGGER.info("CMP response contains " + cmpCertArr.length + " extra certificates");
+		for (int i = 0; i < cmpCertArr.length; i++) {
+			try {
+				CMPCertificate cmpCert = cmpCertArr[i];
+				LOGGER.info("Additional cert '" + cmpCert.getX509v3PKCert().getSubject() + "' included in CMP response");
+				try {
+					X509Certificate cert = (X509Certificate) factory.generateCertificate(new ByteArrayInputStream(cmpCert.getEncoded()));
+					responseContent.additionalCertificates.add(cert);
+				} catch (GeneralSecurityException | IOException e) {
+					LOGGER.info("problem importing certificate: " + e.getMessage(), e);
+					throw e;
+				} catch (Throwable th) {
+					LOGGER.info("problem importing certificate: " + th.getMessage(), th);
+					throw new GeneralSecurityException("problem importing certificate: " + th.getMessage());
+				}
+
+			} catch (NullPointerException npe) { // NOSONAR
+				// just ignore
+			}
+		}
+	}
+
 
 	private PKIMessage getPkiMessage(byte[] responseBytes) throws IOException, GeneralSecurityException {
 		final ASN1Primitive derObject = getDERObject(responseBytes);
@@ -924,4 +941,33 @@ public class CMPClientImpl {
 		}
 	}
 
+	public class CertificateResponseContent{
+		X509Certificate createdCertificate;
+		Set<X509Certificate> additionalCertificates = new HashSet<>();
+		String message;
+
+		public X509Certificate getCreatedCertificate() {
+			return createdCertificate;
+		}
+
+		public void setCreatedCertificate(X509Certificate createdCertificate) {
+			this.createdCertificate = createdCertificate;
+		}
+
+		public Set<X509Certificate> getAdditionalCertificates() {
+			return additionalCertificates;
+		}
+
+		public void setAdditionalCertificates(Set<X509Certificate> additionalCertificates) {
+			this.additionalCertificates = additionalCertificates;
+		}
+
+		public String getMessage() {
+			return message;
+		}
+
+		public void setMessage(String message) {
+			this.message = message;
+		}
+	}
 }

@@ -26,7 +26,7 @@ import java.security.cert.X509Certificate;
 import java.security.spec.MGF1ParameterSpec;
 import java.security.spec.PSSParameterSpec;
 
-class KeystoreSigner implements ProtectedMessageHandler {
+public class KeystoreSigner implements ProtectedMessageHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(KeystoreSigner.class);
 

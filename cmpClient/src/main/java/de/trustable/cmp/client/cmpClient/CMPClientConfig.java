@@ -6,7 +6,7 @@ import org.bouncycastle.asn1.crmf.AttributeTypeAndValue;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cert.crmf.jcajce.JcaCertificateRequestMessageBuilder;
 
-import java.io.InputStream;
+import java.security.KeyStore;
 
 public class CMPClientConfig {
 
@@ -15,13 +15,14 @@ public class CMPClientConfig {
 
     private RemoteTargetHandler remoteTargetHandler;
 
-    private InputStream p12ClientStore = null;
+    private KeyStore p12ClientStore = null;
     private String p12ClientSecret = "";
     private String caUrl = "http://...,";
     private String cmpAlias = "test";
     private X500Name issuerName = null;
     private AttributeTypeAndValue[] aTaVArr = new AttributeTypeAndValue[0];
     private boolean multipleMessages = true;
+    private boolean checkTransactionIdMatch = false;
     private boolean verbose = false;
 
     public boolean isImplicitConfirm() {
@@ -48,11 +49,11 @@ public class CMPClientConfig {
         this.remoteTargetHandler = remoteTargetHandler;
     }
 
-    public InputStream getP12ClientStore() {
+    public KeyStore getP12ClientStore() {
         return p12ClientStore;
     }
 
-    public void setP12ClientStore(InputStream p12ClientStore) {
+    public void setP12ClientStore(KeyStore p12ClientStore) {
         this.p12ClientStore = p12ClientStore;
     }
 
@@ -115,8 +116,15 @@ public class CMPClientConfig {
     public void handleIssuer(JcaCertificateRequestMessageBuilder msgbuilder) {
 
         if( issuerName != null ) {
-            msgbuilder.setIssuer(issuerName);
+            msgbuilder.setIssuer(getIssuerName());
 
         }
+    }
+    public boolean isCheckTransactionIdMatch() {
+        return this.checkTransactionIdMatch;
+    }
+
+    public void setCheckTransactionIdMatch(boolean checkTransactionIdMatch) {
+        this.checkTransactionIdMatch = checkTransactionIdMatch;
     }
 }

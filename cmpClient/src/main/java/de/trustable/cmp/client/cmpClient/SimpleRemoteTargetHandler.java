@@ -26,7 +26,7 @@ public class SimpleRemoteTargetHandler implements RemoteTargetHandler {
      * @return the received bytes
      * @throws IOException io handling went wrong
      */
-    public byte[] sendHttpReq(final String requestUrl, final byte[] requestBytes, final InputStream keyStoreInputStream, final String keyPassword) throws IOException, GeneralSecurityException {
+    public byte[] sendHttpReq(final String requestUrl, final byte[] requestBytes, final KeyStore keyStore, final String keyPassword) throws IOException, GeneralSecurityException {
 
         LOGGER.debug("Sending request to: " + requestUrl);
 
@@ -42,23 +42,22 @@ public class SimpleRemoteTargetHandler implements RemoteTargetHandler {
 
             try {
                 KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance("SunX509");
-                if( keyStoreInputStream != null) {
-                    LOGGER.debug("using client keystore");
-
-                    KeyStore keyStore = KeyStore.getInstance("PKCS12");
-
-                    keyStore.load(keyStoreInputStream, keyPassword.toCharArray());
-                    keyStoreInputStream.close();
-
-                    keyManagerFactory.init(keyStore, keyPassword.toCharArray());
-                }
-
                 SSLContext context = SSLContext.getInstance("TLS");
-                context.init(
-                        keyManagerFactory.getKeyManagers(),
-                        null,
-                        new SecureRandom()
-                );
+                if( keyStore != null) {
+                    LOGGER.debug("using client keystore");
+                    keyManagerFactory.init(keyStore, keyPassword.toCharArray());
+
+                    context.init(
+                            keyManagerFactory.getKeyManagers(),
+                            null,
+                            new SecureRandom()
+                    );
+                }else{
+                    context.init(
+                            null,
+                            null,
+                            new SecureRandom());
+                }
 
                 HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
                 conn.setSSLSocketFactory(context.getSocketFactory());

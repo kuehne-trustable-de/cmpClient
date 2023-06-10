@@ -164,6 +164,7 @@ public class CMPCmdLineClient {
                     System.err.println("No read access to CSR file '" + p12ClientFile + "'! Exiting ...");
                     return 1;
                 }
+
                 fisClientStore = new FileInputStream(p12ClientFile);
             }
 
@@ -176,7 +177,12 @@ public class CMPCmdLineClient {
             if( certIssuer != null){
                 cmpClientConfig.setIssuerName(new X500Name(certIssuer));
             }
-            cmpClientConfig.setP12ClientStore(fisClientStore);
+
+            KeyStore keyStore = KeyStore.getInstance("PKCS12");
+            keyStore.load(fisClientStore, p12ClientSecret.toCharArray());
+            fisClientStore.close();
+
+            cmpClientConfig.setP12ClientStore(keyStore);
             cmpClientConfig.setP12ClientSecret(p12ClientSecret);
             cmpClientConfig.setMultipleMessages(multipleMessages);
             cmpClientConfig.setVerbose(verbose);
@@ -289,7 +295,7 @@ public class CMPCmdLineClient {
 
         InputStream isCSR = new FileInputStream(csrFile);
 
-        X509Certificate cert = client.signCertificateRequest(isCSR);
+        X509Certificate cert = client.signCertificateRequest(isCSR).createdCertificate;
 
         if("DER".equals(outForm)) {
             try(FileOutputStream osCert = new FileOutputStream(certFile)) {

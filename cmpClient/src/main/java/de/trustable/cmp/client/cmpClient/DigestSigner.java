@@ -14,7 +14,7 @@ import org.bouncycastle.operator.MacCalculator;
 
 import java.security.GeneralSecurityException;
 
-class DigestSigner implements ProtectedMessageHandler {
+public class DigestSigner implements ProtectedMessageHandler {
 
     final private char[] hmacSecret;
 
