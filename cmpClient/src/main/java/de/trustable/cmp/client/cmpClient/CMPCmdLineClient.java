@@ -40,6 +40,7 @@ public class CMPCmdLineClient {
         String p12ClientSecret = null;
         String p12ClientFileName = null;
         String caUrl = null;
+        String msgContentType = "application/pkixcmp";
         String alias = null;
         String certIssuer = null;
         String reason = "unspecified";
@@ -47,6 +48,7 @@ public class CMPCmdLineClient {
         String outFileName = "test.crt";
         String outForm = "PEM";
         boolean multipleMessages = true;
+        boolean implicitConfirm = true;
         boolean verbose = false;
 
         if( args.length == 0) {
@@ -66,6 +68,8 @@ public class CMPCmdLineClient {
                 verbose = true;
             } else if( "-sm".equals(arg)) {
                 multipleMessages = false;
+            } else if( "-ic".equals(arg)) {
+                implicitConfirm = true;
             } else if( "-h".equals(arg)) {
                 printHelp();
                 return 0;
@@ -75,6 +79,8 @@ public class CMPCmdLineClient {
                     String nArg = args[i];
                     if( "-u".equals(arg)) {
                         caUrl = nArg;
+                    } else if( "-ct".equals(arg)) {
+                        msgContentType = nArg;
                     } else if( "-a".equals(arg)) {
                         alias = nArg;
                     } else if( "-ci".equals(arg)) {
@@ -173,6 +179,8 @@ public class CMPCmdLineClient {
             cmpClientConfig.setRemoteTargetHandler(new SimpleRemoteTargetHandler());
             cmpClientConfig.setCaUrl(caUrl);
             cmpClientConfig.setCmpAlias(alias);
+            cmpClientConfig.setImplicitConfirm(implicitConfirm);
+            cmpClientConfig.setMsgContentType(msgContentType);
 
             if( certIssuer != null){
                 cmpClientConfig.setIssuerName(new X500Name(certIssuer));
@@ -251,6 +259,7 @@ public class CMPCmdLineClient {
 
         System.out.println("\nArguments:\n");
         System.out.println("-u caURL\tCA URL (required)");
+        System.out.println("-ct contentType\tMeassage comtent type of the CMP message (default 'application/pkixcmp')");
         System.out.println("-a alias\tAlias configuration (required)");
         System.out.println("-s secret\tCMP secret for CMP message authentication (option 1)");
         System.out.println("-kf filename\tKeystore file name for CMP message authentication, PKCS12 type expected (option 2)");
@@ -259,7 +268,9 @@ public class CMPCmdLineClient {
         System.out.println("-ci issuer\tX500 name of the issuer.");
         System.out.println("-cf filename\tKeystore file name for HTTPS client authentication, PKCS12 type expected");
         System.out.println("-cs secret\tKeystore secret for HTTPS client authentication. An alias is not required for this store");
-        System.out.println("-sm\tsend single PKIMessage object, only");
+        System.out.println("-sm\tsend single PKIMessage object, only (default 'false'')");
+        System.out.println("-ic\t'implicitConfirm' flag of the request (default 'true')");
+
         System.out.println("-e reason\trevocation reason (required for revocation), valid values are");
         System.out.println("\t\tkeyCompromise");
         System.out.println("\t\tcACompromise");

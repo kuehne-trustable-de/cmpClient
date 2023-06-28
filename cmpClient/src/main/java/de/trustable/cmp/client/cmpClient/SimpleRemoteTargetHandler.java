@@ -26,7 +26,7 @@ public class SimpleRemoteTargetHandler implements RemoteTargetHandler {
      * @return the received bytes
      * @throws IOException io handling went wrong
      */
-    public byte[] sendHttpReq(final String requestUrl, final byte[] requestBytes, final KeyStore keyStore, final String keyPassword) throws IOException, GeneralSecurityException {
+    public byte[] sendHttpReq(final String requestUrl, final byte[] requestBytes, final String contentType, final KeyStore keyStore, final String keyPassword) throws IOException, GeneralSecurityException {
 
         LOGGER.debug("Sending request to: " + requestUrl);
 
@@ -73,8 +73,9 @@ public class SimpleRemoteTargetHandler implements RemoteTargetHandler {
         con.setDoOutput(true);
         con.setRequestMethod("POST");
 
-//		con.setRequestProperty("Content-Type", "application/octet-stream;charset=UTF-8");
-        con.setRequestProperty("Content-Type", "application/pkixcmp");
+        if( contentType != null && !contentType.isEmpty()) {
+            con.setRequestProperty("Content-Type", contentType);
+        }
 
         java.io.OutputStream os = con.getOutputStream();
         os.write(requestBytes);

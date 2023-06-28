@@ -118,6 +118,7 @@ public class CMPClientImpl {
 			// send and receive ..
 			byte[] responseBytes = cmpClientConfig.getRemoteTargetHandler().sendHttpReq(cmpClientConfig.getCaUrl() + "/" + cmpClientConfig.getCmpAlias(),
 					requestBytes,
+					cmpClientConfig.getMsgContentType(),
 					cmpClientConfig.getP12ClientStore(),
 					cmpClientConfig.getP12ClientSecret());
 
@@ -195,6 +196,7 @@ public class CMPClientImpl {
 			trace("revocation requestBytes : " + java.util.Base64.getEncoder().encodeToString(revocationRequestBytes));
 			byte[] responseBytes = cmpClientConfig.getRemoteTargetHandler().sendHttpReq(cmpClientConfig.getCaUrl() + "/" + cmpClientConfig.getCmpAlias(),
 					revocationRequestBytes,
+					cmpClientConfig.getMsgContentType(),
 					cmpClientConfig.getP12ClientStore(),
 					cmpClientConfig.getP12ClientSecret());
 			trace("revocation responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));

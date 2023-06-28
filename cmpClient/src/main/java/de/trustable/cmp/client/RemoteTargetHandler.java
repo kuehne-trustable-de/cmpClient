@@ -7,6 +7,7 @@ import java.security.KeyStore;
 public interface RemoteTargetHandler {
     byte[] sendHttpReq(final String requestTarget,
                               final byte[] requestBytes,
+                              final String contentType,
                               final KeyStore KeyStore,
                               final String keyPassword) throws IOException, GeneralSecurityException;
 }
