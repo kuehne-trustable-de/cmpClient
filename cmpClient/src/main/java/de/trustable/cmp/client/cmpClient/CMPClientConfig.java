@@ -18,6 +18,8 @@ public class CMPClientConfig {
     private KeyStore p12ClientStore = null;
     private String p12ClientSecret = "";
     private String caUrl = "http://...,";
+    private String sni = null;
+    private boolean disableHostNameVerifier = false;
     private String msgContentType = "application/pkixcmp";
     private String cmpAlias = "test";
     private X500Name issuerName = null;
@@ -72,6 +74,22 @@ public class CMPClientConfig {
 
     public void setCaUrl(String caUrl) {
         this.caUrl = caUrl;
+    }
+
+    public String getSni() {
+        return sni;
+    }
+
+    public void setSni(String sni) {
+        this.sni = sni;
+    }
+
+    public boolean isDisableHostNameVerifier() {
+        return disableHostNameVerifier;
+    }
+
+    public void setDisableHostNameVerifier(boolean disableHostNameVerifier) {
+        this.disableHostNameVerifier = disableHostNameVerifier;
     }
 
     public String getMsgContentType() {

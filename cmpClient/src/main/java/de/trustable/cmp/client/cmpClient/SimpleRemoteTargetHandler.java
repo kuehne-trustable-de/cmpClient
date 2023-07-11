@@ -26,7 +26,13 @@ public class SimpleRemoteTargetHandler implements RemoteTargetHandler {
      * @return the received bytes
      * @throws IOException io handling went wrong
      */
-    public byte[] sendHttpReq(final String requestUrl, final byte[] requestBytes, final String contentType, final KeyStore keyStore, final String keyPassword) throws IOException, GeneralSecurityException {
+    public byte[] sendHttpReq(final String requestUrl,
+                              final byte[] requestBytes,
+                              final String contentType,
+                              final String sni,
+                              final boolean disableHostNameVerifier,
+                              final KeyStore keyStore,
+                              final String keyPassword) throws IOException, GeneralSecurityException {
 
         LOGGER.debug("Sending request to: " + requestUrl);
 
@@ -40,6 +46,9 @@ public class SimpleRemoteTargetHandler implements RemoteTargetHandler {
 
             LOGGER.debug("sending message to TLS endpoint");
 
+            if( sni != null){
+                LOGGER.warn("sni not supported!");
+            }
             try {
                 KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance("SunX509");
                 SSLContext context = SSLContext.getInstance("TLS");
