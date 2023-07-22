@@ -289,11 +289,13 @@ public class CMPClientImpl {
 		trace("set subject to '" + subjectDN + "'");
 
 		X500Name recipientDN = new X500Name( new RDN[0] );
+
 		try {
+
 			for (Extension ext : certExtList) {
-				trace("Csr Extension : " + ext.getExtnId().getId() + " -> " + ext.getExtnValue());
+				trace("Add csr Extension : " + ext.getExtnId().getId() + " -> " + ext.getExtnValue());
 				boolean critical = ext.isCritical();
-				msgbuilder.addExtension(ext.getExtnId(), critical, ext.getEncoded());
+				msgbuilder.addExtension(ext.getExtnId(), critical, ext.getExtnValue().getOctets());
 			}
 
 			msgbuilder.setPublicKey(keyInfo);
@@ -334,8 +336,8 @@ public class CMPClientImpl {
 
 			return message.toASN1Structure();
 
-		} catch (CRMFException | IOException crmfe) {
-			log("Exception occured processing extensions", crmfe);
+		} catch (CRMFException crmfe) {
+			log("Exception occurred processing extensions", crmfe);
 			throw new GeneralSecurityException(crmfe.getMessage());
 		}
 	}

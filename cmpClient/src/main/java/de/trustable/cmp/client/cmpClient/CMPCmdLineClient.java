@@ -186,12 +186,17 @@ public class CMPCmdLineClient {
                 cmpClientConfig.setIssuerName(new X500Name(certIssuer));
             }
 
-            KeyStore keyStore = KeyStore.getInstance("PKCS12");
-            keyStore.load(fisClientStore, p12ClientSecret.toCharArray());
-            fisClientStore.close();
+            if( plainSecret != null && !plainSecret.isEmpty() ) {
+                // identification by plain secret
+            }else{
+                KeyStore keyStore = KeyStore.getInstance("PKCS12");
+                keyStore.load(fisClientStore, p12ClientSecret.toCharArray());
+                fisClientStore.close();
 
-            cmpClientConfig.setP12ClientStore(keyStore);
-            cmpClientConfig.setP12ClientSecret(p12ClientSecret);
+                cmpClientConfig.setP12ClientStore(keyStore);
+                cmpClientConfig.setP12ClientSecret(p12ClientSecret);
+            }
+
             cmpClientConfig.setMultipleMessages(multipleMessages);
             cmpClientConfig.setVerbose(verbose);
 
