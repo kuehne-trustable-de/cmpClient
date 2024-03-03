@@ -80,6 +80,65 @@ public class CMPClientImpl {
 		this.cmpClientConfig = cmpClientConfig;
 	}
 
+	public GenMsgContent getGeneralMessageRequest()
+			throws GeneralSecurityException {
+
+		try {
+			X500Name subjectDN = X500Name.getInstance(new X500Name("CN=User1").toASN1Primitive());
+			PKIMessage pkiRequest = buildGeneralMessageRequest( subjectDN, cmpClientConfig.getMessageHandler());
+
+			ASN1Object requestContent = pkiRequest;
+			if(cmpClientConfig.isMultipleMessages()){
+				trace("wrapping PKIMessage into PKIMessages");
+				requestContent = new PKIMessages(pkiRequest);
+			}
+			byte[] requestBytes = requestContent.getEncoded();
+
+			if(cmpClientConfig.isVerbose()) {
+				File dumpRequestFile = File.createTempFile("cmp_request_dump", ".der");
+				try (FileOutputStream fos = new FileOutputStream(dumpRequestFile)) {
+					fos.write(requestBytes);
+				}
+				trace("requestBytes in dump file : " + dumpRequestFile.getAbsolutePath());
+
+				trace("requestBytes : " + java.util.Base64.getEncoder().encodeToString(requestBytes));
+				trace("cmp client calls url '" + cmpClientConfig.getCaUrl() + "' with alias '" + cmpClientConfig.getCmpAlias() + "'");
+			}
+
+
+			// send and receive ..
+			byte[] responseBytes = cmpClientConfig.getRemoteTargetHandler().sendHttpReq(cmpClientConfig.getCaUrl() + "/" + cmpClientConfig.getCmpAlias(),
+					requestBytes,
+					cmpClientConfig.getMsgContentType(),
+					cmpClientConfig.getSni(),
+					false,
+					cmpClientConfig.getP12ClientStore(),
+					cmpClientConfig.getP12ClientSecret());
+
+			if (responseBytes == null) {
+				throw new GeneralSecurityException("remote connector returned 'null'");
+			}
+
+			if(cmpClientConfig.isVerbose()) {
+				File dumpResponseFile = File.createTempFile("cmp_response_dump", ".der");
+				try (FileOutputStream fos = new FileOutputStream(dumpResponseFile)) {
+					fos.write(responseBytes);
+				}
+				trace("responseBytes in dump file : " + dumpResponseFile.getAbsolutePath());
+				trace("responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));
+			}
+
+			// extract the certificate
+			return readGenMsgResponse(responseBytes);
+
+
+		} catch (IOException e) {
+			log("IO / encoding problem", e);
+			throw new GeneralSecurityException(e.getMessage());
+		}
+	}
+
+
 	public CertificateResponseContent signCertificateRequest(final InputStream isCSR)
 			throws GeneralSecurityException {
 
@@ -134,8 +193,8 @@ public class CMPClientImpl {
 					fos.write(responseBytes);
 				}
 				trace("responseBytes in dump file : " + dumpResponseFile.getAbsolutePath());
-				trace("responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));
 			}
+			trace("responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));
 
 			// extract the certificate
 			return readCertResponse(responseBytes, pkiRequest);
@@ -219,6 +278,104 @@ public class CMPClientImpl {
 			throw new GeneralSecurityException(e.getMessage());
 		}
 	}
+
+	public PKIMessage buildGeneralMessageRequest(final X500Name subjectDN,
+												 final ProtectedMessageHandler messageHandler)
+			throws GeneralSecurityException {
+
+		InfoTypeAndValue[] itvArr = new InfoTypeAndValue[1];
+		itvArr[0] = new InfoTypeAndValue( CMPObjectIdentifiers.id_regCtrl_algId);
+		GenMsgContent genMsgContent = new GenMsgContent(itvArr);
+
+		X500Name recipientDN = new X500Name( new RDN[0] );
+		X500Name sender = messageHandler.getSender(subjectDN);
+		ProtectedPKIMessageBuilder pbuilder = getPKIBuilder(recipientDN, sender);
+
+		messageHandler.addCertificate(pbuilder);
+
+		// create the body
+		PKIBody pkiBody = new PKIBody(PKIBody.TYPE_GEN_MSG, genMsgContent); // general message request
+		pbuilder.setBody(pkiBody);
+
+		ProtectedPKIMessage message = messageHandler.signMessage(pbuilder);
+
+		PKIMessage pkiMessage = message.toASN1Structure();
+
+		return pkiMessage;
+
+	}
+
+	/**
+	 *
+	 * @param responseBytes
+	 * @return
+	 * @throws IOException
+	 * @throws GeneralSecurityException
+	 */
+	public GenMsgContent readGenMsgResponse( final byte[] responseBytes)
+			throws IOException,
+			GeneralSecurityException {
+
+		PKIMessage pkiMessage = getPkiMessage(responseBytes);
+
+		final PKIHeader header = pkiMessage.getHeader();
+
+		if( LOGGER.isDebugEnabled()){
+			if( header.getRecipNonce() == null){
+				LOGGER.debug( "no recip nonce");
+			}else{
+				LOGGER.debug( "recip nonce : " + Base64.toBase64String( header.getRecipNonce().getOctets() ));
+			}
+
+			if( header.getSenderNonce() == null){
+				LOGGER.debug( "no sender nonce");
+			}else{
+				LOGGER.debug( "sender nonce : " + Base64.toBase64String( header.getSenderNonce().getOctets() ));
+			}
+		}
+
+		final PKIBody body = pkiMessage.getBody();
+
+		int tagno = body.getType();
+
+		if( LOGGER.isDebugEnabled()){
+			LOGGER.debug("Received CMP message with pvno=" + header.getPvno()
+					+ ", sender=" + header.getSender().toString() + ", recipient="
+					+ header.getRecipient().toString());
+			LOGGER.debug("Body is of type: " + tagno);
+			LOGGER.debug("Transaction id: " + header.getTransactionID());
+		}
+
+		if (tagno == PKIBody.TYPE_ERROR) {
+			handleCMPError(body);
+
+		} else if (tagno == PKIBody.TYPE_GEN_REP ) {
+
+			LOGGER.debug("Rev response received");
+
+			if( body.getContent() != null ){
+				GenMsgContent genMsgContent = GenMsgContent.getInstance(body.getContent());
+
+				InfoTypeAndValue[] infoTypeAndValueArr = genMsgContent.toInfoTypeAndValueArray();
+				if( infoTypeAndValueArr != null ){
+					for( InfoTypeAndValue infoTypeAndValue: infoTypeAndValueArr){
+						LOGGER.info("infoTypeAndValue : " + infoTypeAndValue.getInfoType()+ " / " + infoTypeAndValue.getInfoValue());
+					}
+				}else{
+					LOGGER.debug("no certId ");
+				}
+				return genMsgContent;
+
+			}
+
+		} else {
+			throw new GeneralSecurityException("unexpected PKI body type :" + tagno);
+		}
+
+		return null;
+	}
+
+
 
 	/**
 	 * build the CMP request message
@@ -533,7 +690,7 @@ public class CMPClientImpl {
 		}
 
 		if (pkiMessage == null) {
-			throw new GeneralSecurityException("No CMP message could be parsed from received Der object.");
+			throw new GeneralSecurityException("No CMP message could be parsed from received DER object.");
 		}
 		return pkiMessage;
 	}
@@ -545,13 +702,7 @@ public class CMPClientImpl {
 			ProtectedPKIMessage protectedPKIMsg = new ProtectedPKIMessage(generalPKIMessage);
 
 			if( cmpClientConfig.getMessageHandler().verifyMessage(protectedPKIMsg)){
-//			if( protectedPKIMsg.hasPasswordBasedMacProtection()) {
-
-//				if (protectedPKIMsg.verify(getMacCalculatorBuilder(), plainSecret.toCharArray())) {
-//					trace("received response message verified successfully by HMAC");
-//				} else {
-//					throw new GeneralSecurityException("received response message failed verification (by HMAC)!");
-//				}
+				trace( "message verification success");
 			}else{
 				throw new GeneralSecurityException("received response message has unexpected protection scheme!");
 			}

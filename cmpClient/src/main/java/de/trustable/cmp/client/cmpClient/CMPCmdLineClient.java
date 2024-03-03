@@ -1,6 +1,7 @@
 package de.trustable.cmp.client.cmpClient;
 
 import de.trustable.cmp.client.ProtectedMessageHandler;
+import org.bouncycastle.asn1.cmp.GenMsgContent;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
 import org.slf4j.Logger;
@@ -14,7 +15,7 @@ import java.util.Locale;
 
 public class CMPCmdLineClient {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(CMPClientImpl.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(CMPCmdLineClient.class);
 
     static CMPCmdLineClient cmpCmdLineClient = new CMPCmdLineClient();
     static CMPClientImpl client;
@@ -202,6 +203,8 @@ public class CMPCmdLineClient {
 
             client = new CMPClientImpl(cmpClientConfig);
 
+//            cmpCmdLineClient.getCAInfo();
+
             if( "Request".equals(mode)) {
 
                 System.out.println("Requesting certificate from csr file '" + inFileName + "' ...");
@@ -303,6 +306,12 @@ public class CMPCmdLineClient {
         System.out.println("java -jar cmpClient-1.2.0-jar-with-dependencies.jar -r -u http://{yourServer}/ejbca/publicweb/cmp -a {yourCMPAlias} -s {yourPassword} -i test.crt -e superseded" );
 
         System.out.println("\ncode available at https://github.com/kuehne-trustable-de/cmpClient");
+
+    }
+
+    private void getCAInfo() throws GeneralSecurityException {
+
+        GenMsgContent genMsgContent = client.getGeneralMessageRequest();
 
     }
 

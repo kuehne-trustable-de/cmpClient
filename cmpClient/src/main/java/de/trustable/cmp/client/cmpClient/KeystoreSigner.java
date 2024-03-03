@@ -59,6 +59,7 @@ public class KeystoreSigner implements ProtectedMessageHandler {
                     .build(privKey);
             return builder.build(msgsigner);
         } catch (OperatorCreationException | CMPException e) {
+            LOGGER.warn("in KeystoreSigner.signMessage", e);
             throw new GeneralSecurityException(e);
         }
     }
@@ -79,6 +80,7 @@ public class KeystoreSigner implements ProtectedMessageHandler {
                     .build(certificate);
             return message.verify(verifierProvider);
         } catch (OperatorCreationException | CMPException | KeyStoreException e) {
+            LOGGER.warn("in KeystoreSigner.verifyMessage", e);
             throw new GeneralSecurityException(e);
         }
     }
