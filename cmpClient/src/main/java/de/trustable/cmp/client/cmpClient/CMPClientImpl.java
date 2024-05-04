@@ -179,7 +179,7 @@ public class CMPClientImpl {
 					requestBytes,
 					cmpClientConfig.getMsgContentType(),
 					cmpClientConfig.getSni(),
-					false,
+					cmpClientConfig.isDisableHostNameVerifier(),
 					cmpClientConfig.getP12ClientStore(),
 					cmpClientConfig.getP12ClientSecret());
 
