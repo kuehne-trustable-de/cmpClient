@@ -849,21 +849,44 @@ public class CMPClientImpl {
 		String errMsg = "";
 
 		ErrorMsgContent errMsgContent = ErrorMsgContent.getInstance(body.getContent());
-		if( errMsgContent.getErrorCode() != null) {
-			errMsg = "errMsg : #" + errMsgContent.getErrorCode() + " " + errMsgContent.getErrorDetails() + " / "
-					+ errMsgContent.getPKIStatusInfo().getFailInfo();
-			log(errMsg);
+		if( errMsgContent.getErrorCode() != null || errMsgContent.getErrorDetails() != null ) {
+
+			errMsg = "errMsg :";
+
+			if( errMsgContent.getErrorCode() != null ) {
+				errMsg += " #" + errMsgContent.getErrorCode();
+			}
+
+			if( errMsgContent.getErrorDetails() != null ) {
+				errMsg += " " + errMsgContent.getErrorDetails();
+			}
+/*
+			if( errMsgContent.getPKIStatusInfo() != null  &&
+					errMsgContent.getPKIStatusInfo().getFailInfo() != null ) {
+				errMsg += " " + errMsgContent.getPKIStatusInfo().getFailInfo() + " " +
+						errMsgContent.getPKIStatusInfo().getStatusString().toString();
+			}
+
+ */
 		}
 
 		try {
 			if (errMsgContent.getPKIStatusInfo() != null) {
+				if( !errMsg.isEmpty()){
+					errMsg += "\n";
+				}
+				errMsg += "StatusInfo :";
 				PKIFreeText freeText = errMsgContent.getPKIStatusInfo().getStatusString();
 				for (int i = 0; i < freeText.size(); i++) {
-					trace("#" + i + ": " + freeText.getStringAt(i));
+					errMsg += "#" + i + ": " + freeText.getStringAt(i);
 				}
 			}
 		} catch (NullPointerException npe) { // NOSONAR
 			// just ignore
+		}
+
+		if( !errMsg.isEmpty()){
+			log(errMsg);
 		}
 
 		throw new GeneralSecurityException(errMsg);
