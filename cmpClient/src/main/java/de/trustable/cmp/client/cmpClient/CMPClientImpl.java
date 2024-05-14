@@ -670,7 +670,7 @@ public class CMPClientImpl {
 	}
 
 
-	private PKIMessage getPkiMessage(byte[] responseBytes) throws IOException, GeneralSecurityException {
+	PKIMessage getPkiMessage(byte[] responseBytes) throws IOException, GeneralSecurityException {
 		final ASN1Primitive derObject = getDERObject(responseBytes);
 
 		PKIMessage pkiMessage = null;
@@ -704,7 +704,7 @@ public class CMPClientImpl {
 			if( cmpClientConfig.getMessageHandler().verifyMessage(protectedPKIMsg)){
 				trace( "message verification success");
 			}else{
-				throw new GeneralSecurityException("received response message has unexpected protection scheme!");
+				throw new GeneralSecurityException("received response message cannot be verified or has unexpected protection scheme!");
 			}
 		} else {
 			warn("received response message contains NO content protection!");

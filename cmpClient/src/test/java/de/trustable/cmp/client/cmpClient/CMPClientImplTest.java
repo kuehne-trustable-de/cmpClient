@@ -11,6 +11,7 @@ import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.Extensions;
 import org.bouncycastle.cert.cmp.CMPException;
+import org.bouncycastle.cert.cmp.GeneralPKIMessage;
 import org.bouncycastle.cert.cmp.ProtectedPKIMessage;
 import org.bouncycastle.cert.cmp.ProtectedPKIMessageBuilder;
 import org.bouncycastle.cert.crmf.CRMFException;
@@ -22,6 +23,8 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
 import java.util.Base64;
 
 
@@ -152,6 +155,23 @@ class CMPClientImplTest {
 
         Assertions.assertNotNull(certificateResponseContent.getMessage());
         Assertions.assertEquals("", certificateResponseContent.getMessage());
+    }
+    @Test
+    void validateCertRequestKeySigner() throws GeneralSecurityException, IOException, CMPException, CRMFException {
+
+        KeyStore ks = KeyStore.getInstance("PKCS12");
+        ks.load(this.getClass().getResourceAsStream("tenant.foo.com.p12"),"S3cr3t!S".toCharArray());
+        KeystoreSigner keystoreSigner = new KeystoreSigner(ks,
+                "alias",
+                "S3cr3t!S",
+                true);
+
+        PKIMessage pkiMessage = cmpClient.getPkiMessage(Base64.getDecoder().decode(TEST_CMP_CERT_RESPONSE));
+
+        ProtectedPKIMessage protectedPKIMsg = new ProtectedPKIMessage(new GeneralPKIMessage(pkiMessage));
+
+        keystoreSigner.verifyMessage(protectedPKIMsg);
+
     }
 
     @Test

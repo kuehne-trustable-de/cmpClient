@@ -30,15 +30,27 @@ public class KeystoreSigner implements ProtectedMessageHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(KeystoreSigner.class);
 
-    final private KeyStore ks;
-    final private String ksAlias;
-    final private String ksSecret;
-    final private Certificate signerCertificate;
+    final KeyStore ks;
+    final String ksAlias;
+    final String ksSecret;
 
-    public KeystoreSigner(KeyStore ks, String ksAlias, String ksSecret) throws KeyStoreException {
+
+    final boolean ignoreFailedVerification;
+    final Certificate signerCertificate;
+
+    public KeystoreSigner(KeyStore ks,
+                          String ksAlias,
+                          String ksSecret) throws KeyStoreException {
+        this(ks, ksAlias, ksSecret, false);
+    }
+    public KeystoreSigner(KeyStore ks,
+                String ksAlias,
+                String ksSecret,
+        boolean ignoreFailedVerification) throws KeyStoreException {
         this.ks = ks;
         this.ksAlias = ksAlias;
         this.ksSecret = ksSecret;
+        this.ignoreFailedVerification = ignoreFailedVerification;
 
         this.signerCertificate = ks.getCertificate(ksAlias);
     }
@@ -69,8 +81,16 @@ public class KeystoreSigner implements ProtectedMessageHandler {
 
         LOGGER.debug("in KeystoreSigner.verifyMessage ...");
 
-        if (message.hasPasswordBasedMacProtection()) {
-            throw new GeneralSecurityException("Server used MacProtection, but certificate & key present!");
+        try {
+            if (message.hasPasswordBasedMacProtection()) {
+                throw new GeneralSecurityException("Server used MacProtection, but certificate & key present!");
+            }
+        }catch( Exception ex){
+            if(ignoreFailedVerification) {
+                LOGGER.info("hasPasswordBasedMacProtection causes exception", ex);
+            }else{
+                throw ex;
+            }
         }
 
         try {
@@ -80,8 +100,12 @@ public class KeystoreSigner implements ProtectedMessageHandler {
                     .build(certificate);
             return message.verify(verifierProvider);
         } catch (OperatorCreationException | CMPException | KeyStoreException e) {
-            LOGGER.warn("in KeystoreSigner.verifyMessage", e);
-            throw new GeneralSecurityException(e);
+            if(ignoreFailedVerification) {
+                LOGGER.warn("in KeystoreSigner.verifyMessage", e);
+                return true;
+            }else{
+                throw new GeneralSecurityException(e);
+            }
         }
     }
 
@@ -106,6 +130,22 @@ public class KeystoreSigner implements ProtectedMessageHandler {
         } catch (IOException | CertificateEncodingException e) {
             LOGGER.info("problem adding signer certificate", e );
         }
+    }
+
+    public KeyStore getKs() {
+        return ks;
+    }
+
+    public String getKsAlias() {
+        return ksAlias;
+    }
+
+    public String getKsSecret() {
+        return ksSecret;
+    }
+
+    public boolean isIgnoreFailedVerification() {
+        return ignoreFailedVerification;
     }
 
 }

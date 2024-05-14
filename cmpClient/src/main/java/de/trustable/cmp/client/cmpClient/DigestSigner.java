@@ -11,21 +11,31 @@ import org.bouncycastle.cert.crmf.CRMFException;
 import org.bouncycastle.cert.crmf.PKMACBuilder;
 import org.bouncycastle.cert.crmf.jcajce.JcePKMACValuesCalculator;
 import org.bouncycastle.operator.MacCalculator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.security.GeneralSecurityException;
 
 public class DigestSigner implements ProtectedMessageHandler {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(DigestSigner.class);
+
     final private char[] hmacSecret;
+    final private boolean ignoreFailedVerification;
 
     public DigestSigner(String hmacSecret) {
+        this(hmacSecret, false);
+    }
+
+    public DigestSigner(String hmacSecret, boolean ignoreFailedVerification) {
 
         this.hmacSecret = hmacSecret.toCharArray();
+        this.ignoreFailedVerification = ignoreFailedVerification;
     }
 
     @Override
     public ProtectedPKIMessage signMessage(ProtectedPKIMessageBuilder builder) throws GeneralSecurityException {
-        System.out.println("in DigestSigner.signMessage ...");
+        LOGGER.debug("in DigestSigner.signMessage ...");
         try {
             MacCalculator macCalculator = getMacCalculator(hmacSecret);
             return builder.build(macCalculator);
@@ -36,16 +46,25 @@ public class DigestSigner implements ProtectedMessageHandler {
 
     @Override
     public boolean verifyMessage(ProtectedPKIMessage message) throws GeneralSecurityException {
-        System.out.println("in DigestSigner.verifyMessage ...");
+        LOGGER.debug("in DigestSigner.verifyMessage ...");
 
         if (!message.hasPasswordBasedMacProtection()) {
-            throw new GeneralSecurityException("HMAC secret present, bt server did NOT use MacProtection!");
+            if(ignoreFailedVerification){
+                LOGGER.info("HMAC secret present, but server did NOT use MacProtection!");
+            }else {
+                throw new GeneralSecurityException("HMAC secret present, but server did NOT use MacProtection!");
+            }
         }
 
         try {
             return message.verify(getMacCalculatorBuilder(), hmacSecret);
         } catch (CMPException | CRMFException e) {
-            throw new GeneralSecurityException(e);
+            if(ignoreFailedVerification){
+                LOGGER.info("HMAC verification failed, but ignoring it!", e);
+                return true;
+            }else {
+                throw new GeneralSecurityException(e);
+            }
         }
     }
 
@@ -61,6 +80,7 @@ public class DigestSigner implements ProtectedMessageHandler {
 
     /**
      * build a HMAC  calculator from a given secret
+     *
      * @param hmacSecret the given secret for this connection
      * @return the HMACCalculator object
      * @throws CRMFException creation of the calculator failed
@@ -72,8 +92,9 @@ public class DigestSigner implements ProtectedMessageHandler {
 
     /**
      * build a PKMACBuilder
-     * @throws CRMFException creation of the calculator failed
+     *
      * @return the PKMACBuilder object withdefault algorithms
+     * @throws CRMFException creation of the calculator failed
      */
     public static PKMACBuilder getMacCalculatorBuilder() throws CRMFException {
 
