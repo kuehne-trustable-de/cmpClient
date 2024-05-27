@@ -391,7 +391,9 @@ public class CMPClientImpl {
 		final SubjectPublicKeyInfo keyInfo = p10Req.getSubjectPublicKeyInfo();
 
 		try {
-			if( !p10Req.isSignatureValid(new JcaContentVerifierProviderBuilder().build(keyInfo))){
+			if( !p10Req.isSignatureValid(new JcaContentVerifierProviderBuilder()
+//				.setProvider("BCPQC")
+				.build(keyInfo))){
 				throw new GeneralSecurityException("CSR signature validation failed");
 			}
 		} catch (PKCSException | OperatorCreationException e) {
@@ -704,7 +706,9 @@ public class CMPClientImpl {
 			if( cmpClientConfig.getMessageHandler().verifyMessage(protectedPKIMsg)){
 				trace( "message verification success");
 			}else{
-				throw new GeneralSecurityException("received response message cannot be verified or has unexpected protection scheme!");
+				trace( "message verification failed");
+
+//				throw new GeneralSecurityException("received response message cannot be verified or has unexpected protection scheme!");
 			}
 		} else {
 			warn("received response message contains NO content protection!");

@@ -1,9 +1,27 @@
 package de.trustable.cmp.client.cmpClient;
 
 import de.trustable.cmp.client.ProtectedMessageHandler;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.SecureRandom;
 import org.bouncycastle.asn1.cmp.GenMsgContent;
+import java.security.Security;
 import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x509.GeneralName;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
+import org.bouncycastle.pkcs.PKCS10CertificationRequest;
+import org.bouncycastle.pqc.crypto.lms.LMOtsParameters;
+import org.bouncycastle.pqc.crypto.lms.LMSigParameters;
+import org.bouncycastle.pqc.jcajce.provider.BouncyCastlePQCProvider;
+import org.bouncycastle.pqc.jcajce.spec.LMSHSSKeyGenParameterSpec;
+import org.bouncycastle.pqc.jcajce.spec.LMSKeyGenParameterSpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,6 +40,8 @@ public class CMPCmdLineClient {
 
 
     public static void main(String[] args) {
+
+        Security.addProvider(new BouncyCastlePQCProvider());
 
         int ret = handleArgs(args);
 
@@ -48,6 +68,12 @@ public class CMPCmdLineClient {
         String inFileName = "test.csr";
         String outFileName = "test.crt";
         String outForm = "PEM";
+
+        String buildAlgo = "RSA";
+        String buildAlgoLen = null;
+        String buildAlgoAlt = null;
+        String buildAlgoLenAlt = null;
+
         boolean multipleMessages = true;
         boolean implicitConfirm = true;
         boolean verbose = false;
@@ -65,6 +91,8 @@ public class CMPCmdLineClient {
                 mode = "Request";
             } else if( "-r".equals(arg)) {
                 mode = "Revoke";
+            } else if( "-b".equals(arg)) {
+                mode = "Build";
             } else if( "-v".equals(arg)) {
                 verbose = true;
             } else if( "-sm".equals(arg)) {
@@ -106,7 +134,16 @@ public class CMPCmdLineClient {
                         p12ClientSecret = nArg;
                     } else if( "-cf".equals(arg)) {
                         p12ClientFileName = nArg;
+                    } else if( "-balgo".equalsIgnoreCase(arg)) {
+                        buildAlgo = nArg;
+                    } else if( "-balgolen".equalsIgnoreCase(arg)) {
+                        buildAlgoLen = nArg;
+                    } else if( "-balgoalt".equalsIgnoreCase(arg)) {
+                        buildAlgoAlt = nArg;
+                    } else if( "-balgolenalt".equalsIgnoreCase(arg)) {
+                        buildAlgoLenAlt = nArg;
                     }
+
 
                 }else {
                     System.err.println("option '" + arg + "' requires argument!");
@@ -203,30 +240,69 @@ public class CMPCmdLineClient {
 
             client = new CMPClientImpl(cmpClientConfig);
 
-//            cmpCmdLineClient.getCAInfo();
+            if ("Build".equals(mode)) {
 
-            if( "Request".equals(mode)) {
+                KeyPair keyPairPrimary = createKeyPair(buildAlgo, buildAlgoLen);
+                KeyPair keyPairAlt = null;
+                SubjectPublicKeyInfo subjectPublicKeyInfoAlt = null;
+                if( buildAlgoAlt != null){
+                    keyPairAlt = createKeyPair(buildAlgoAlt, buildAlgoLenAlt);
+                    subjectPublicKeyInfoAlt = SubjectPublicKeyInfo.getInstance(keyPairAlt.getPublic().getEncoded());
+                }
+
+                PKCS10CertificationRequest pkcs10CertificationRequest = PKCS10Generator.getCsr(
+                    new X500Name("CN=PQC Hybrid Test"),
+                    keyPairPrimary.getPublic(),
+                    keyPairPrimary.getPrivate(),
+                    subjectPublicKeyInfoAlt,
+                    null);
+
+                X509Certificate cert = client.signCertificateRequest(pkcs10CertificationRequest).createdCertificate;
+
+                System.out.println("certficate created : " + cert);
+
+                FileWriter fileWriterCert = new FileWriter(outFileName + ".pem");
+                try (JcaPEMWriter pemWriterCert = new JcaPEMWriter(fileWriterCert)) {
+                    pemWriterCert.writeObject(cert);
+                }
+                fileWriterCert.close();
+
+                FileWriter fileWriterKey = new FileWriter(outFileName + ".key." + buildAlgo.toLowerCase(Locale.ROOT)+ ".pem");
+                try (JcaPEMWriter pemWriterCert = new JcaPEMWriter(fileWriterKey)) {
+                    pemWriterCert.writeObject(keyPairPrimary.getPrivate());
+                }
+                fileWriterKey.close();
+
+                if( buildAlgoAlt != null) {
+                    fileWriterKey = new FileWriter(outFileName + ".key." + buildAlgoAlt.toLowerCase(Locale.ROOT)+ ".pem");
+                    try (JcaPEMWriter pemWriterCert = new JcaPEMWriter(fileWriterKey)) {
+                        pemWriterCert.writeObject(keyPairAlt.getPrivate());
+                    }
+                    fileWriterKey.close();
+                }
+
+            } else if ("Request".equals(mode)) {
 
                 System.out.println("Requesting certificate from csr file '" + inFileName + "' ...");
 
                 File inFile = new File(inFileName);
-                if( !inFile.exists()) {
+                if (!inFile.exists()) {
                     System.err.println("CSR file '" + inFile + "' does not exist! Exiting ...");
                     return 1;
                 }
-                if( !inFile.canRead()) {
+                if (!inFile.canRead()) {
                     System.err.println("No read access to CSR file '" + inFile + "'! Exiting ...");
                     return 1;
                 }
 
                 File outFile = new File(outFileName);
-                if( outFile.exists()) {
+                if (outFile.exists()) {
                     System.err.println("Certificate file '" + outFile + "' already exist! Exiting ...");
                     return 1;
                 }
-
                 cmpCmdLineClient.signCertificateRequest(inFile, outFile, outForm);
-            } else if( "Revoke".equals(mode)) {
+
+            } else if ("Revoke".equals(mode)) {
 
                 System.out.println("Revoking certificate from file '" + inFileName + "' ...");
 
@@ -256,6 +332,29 @@ public class CMPCmdLineClient {
         return 0;
     }
 
+
+    private static KeyPair createKeyPair(String algorithmName, String keyLength)
+        throws NoSuchAlgorithmException, NoSuchProviderException, InvalidAlgorithmParameterException {
+        LOGGER.info("building '{}' using provider '{}' ", algorithmName);
+
+        KeyPairGenerator kpGen = KeyPairGenerator.getInstance(algorithmName);
+
+        if ("RSA".equalsIgnoreCase(algorithmName)) {
+            int rsaLength = 2048;
+            if( keyLength != null ){
+                try {
+                    rsaLength = Integer.parseInt(keyLength);
+                } catch( NumberFormatException nfe){
+                    System.err.println("key length argument not parseable, using 2048.");
+                }
+            }
+            kpGen.initialize(rsaLength);
+        } else if (algorithmName.toUpperCase(Locale.ROOT).startsWith("DILITHIUM")){
+            // nothing to do
+        }
+
+        return kpGen.generateKeyPair();
+    }
 
     private static void printHelp() {
         System.out.println("\nSimple CMP Client\n");
