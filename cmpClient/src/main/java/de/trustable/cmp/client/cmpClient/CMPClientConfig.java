@@ -26,6 +26,7 @@ public class CMPClientConfig {
     private AttributeTypeAndValue[] aTaVArr = new AttributeTypeAndValue[0];
     private boolean multipleMessages = true;
     private boolean checkTransactionIdMatch = false;
+    private boolean fillEmptySubjectWithSAN = false;
     private boolean verbose = false;
 
     public boolean isImplicitConfirm() {
@@ -153,5 +154,13 @@ public class CMPClientConfig {
 
     public void setCheckTransactionIdMatch(boolean checkTransactionIdMatch) {
         this.checkTransactionIdMatch = checkTransactionIdMatch;
+    }
+
+    public boolean isFillEmptySubjectWithSAN() {
+        return fillEmptySubjectWithSAN;
+    }
+
+    public void setFillEmptySubjectWithSAN(boolean fillEmptySubjectWithSAN) {
+        this.fillEmptySubjectWithSAN = fillEmptySubjectWithSAN;
     }
 }

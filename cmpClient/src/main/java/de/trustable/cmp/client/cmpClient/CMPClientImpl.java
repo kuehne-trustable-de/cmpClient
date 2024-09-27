@@ -24,6 +24,7 @@ import org.bouncycastle.asn1.crmf.CertId;
 import org.bouncycastle.asn1.crmf.CertReqMessages;
 import org.bouncycastle.asn1.crmf.CertTemplateBuilder;
 import org.bouncycastle.asn1.pkcs.Attribute;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.*;
@@ -72,10 +73,10 @@ public class CMPClientImpl {
 	private CMPClientConfig cmpClientConfig;
 
 	private CMPClientImpl() {
-        Security.addProvider( new BouncyCastleProvider() );
+		Security.addProvider(new BouncyCastleProvider());
 	}
 
-	public CMPClientImpl(final CMPClientConfig cmpClientConfig){
+	public CMPClientImpl(final CMPClientConfig cmpClientConfig) {
 		this();
 		this.cmpClientConfig = cmpClientConfig;
 	}
@@ -85,16 +86,16 @@ public class CMPClientImpl {
 
 		try {
 			X500Name subjectDN = X500Name.getInstance(new X500Name("CN=User1").toASN1Primitive());
-			PKIMessage pkiRequest = buildGeneralMessageRequest( subjectDN, cmpClientConfig.getMessageHandler());
+			PKIMessage pkiRequest = buildGeneralMessageRequest(subjectDN, cmpClientConfig.getMessageHandler());
 
 			ASN1Object requestContent = pkiRequest;
-			if(cmpClientConfig.isMultipleMessages()){
+			if (cmpClientConfig.isMultipleMessages()) {
 				trace("wrapping PKIMessage into PKIMessages");
 				requestContent = new PKIMessages(pkiRequest);
 			}
 			byte[] requestBytes = requestContent.getEncoded();
 
-			if(cmpClientConfig.isVerbose()) {
+			if (cmpClientConfig.isVerbose()) {
 				File dumpRequestFile = File.createTempFile("cmp_request_dump", ".der");
 				try (FileOutputStream fos = new FileOutputStream(dumpRequestFile)) {
 					fos.write(requestBytes);
@@ -119,7 +120,7 @@ public class CMPClientImpl {
 				throw new GeneralSecurityException("remote connector returned 'null'");
 			}
 
-			if(cmpClientConfig.isVerbose()) {
+			if (cmpClientConfig.isVerbose()) {
 				File dumpResponseFile = File.createTempFile("cmp_response_dump", ".der");
 				try (FileOutputStream fos = new FileOutputStream(dumpResponseFile)) {
 					fos.write(responseBytes);
@@ -138,7 +139,6 @@ public class CMPClientImpl {
 		}
 	}
 
-
 	public CertificateResponseContent signCertificateRequest(final InputStream isCSR)
 			throws GeneralSecurityException {
 
@@ -154,7 +154,10 @@ public class CMPClientImpl {
 		try {
 
 			// build a CMP request from the CSR
-			PKIMessage pkiRequest = buildCertRequest(certReqId, p10Req, cmpClientConfig.getMessageHandler());
+			PKIMessage pkiRequest = buildCertRequest(certReqId,
+					p10Req,
+					cmpClientConfig.getMessageHandler(),
+					cmpClientConfig.isFillEmptySubjectWithSAN() );
 
 			ASN1Object requestContent = pkiRequest;
 			if(cmpClientConfig.isMultipleMessages()){
@@ -376,7 +379,6 @@ public class CMPClientImpl {
 	}
 
 
-
 	/**
 	 * build the CMP request message
 	 * @param certReqId the handle id for the request
@@ -386,6 +388,24 @@ public class CMPClientImpl {
 	 * @throws GeneralSecurityException something cryptographic went wrong
 	 */
 	public PKIMessage buildCertRequest(long certReqId, final PKCS10CertificationRequest p10Req, final ProtectedMessageHandler signer)
+			throws GeneralSecurityException {
+
+		return buildCertRequest(certReqId,p10Req,signer,false);
+	}
+
+	/**
+	 * build the CMP request message
+	 * @param certReqId the handle id for the request
+	 * @param p10Req input CSR object
+	 * @param signer an implementation for message authentication
+	 * @param fillEmptySubjectWithSAN fill empty subject with DNS san as common name
+	 * @return the CMP request message
+	 * @throws GeneralSecurityException something cryptographic went wrong
+	 */
+	public PKIMessage buildCertRequest(long certReqId,
+									   final PKCS10CertificationRequest p10Req,
+									   final ProtectedMessageHandler signer,
+									   final boolean fillEmptySubjectWithSAN)
 			throws GeneralSecurityException {
 
 		final SubjectPublicKeyInfo keyInfo = p10Req.getSubjectPublicKeyInfo();
@@ -399,7 +419,22 @@ public class CMPClientImpl {
 		}
 
 		X500Name subjectDN = p10Req.getSubject();
-		trace("subjectDN : " + subjectDN.toString());
+		if( (subjectDN != null) && (!subjectDN.toString().trim().isEmpty() )) {
+			trace("subjectDN : " + subjectDN);
+		}else {
+			if(fillEmptySubjectWithSAN) {
+				Set<GeneralName> generalNameSet = getSANList(p10Req.getAttributes());
+				for (GeneralName gName : generalNameSet) {
+					if (GeneralName.dNSName == gName.getTagNo()) {
+						subjectDN = new X500Name("CN=" + gName.getName().toString());
+						trace("using SAN value '" + gName.getName() + "' as subject");
+						break;
+					}
+				}
+			}else{
+				trace("proceeding with empty subject");
+			}
+		}
 
 		Collection<Extension> certExtList = new ArrayList<>();
 
@@ -407,15 +442,19 @@ public class CMPClientImpl {
 		for(Attribute attribute: p10Req.getAttributes()){
 			for(ASN1Encodable asn1Encodable: attribute.getAttributeValues()){
 				if( asn1Encodable != null){
-					Extensions extensions = Extensions.getInstance(asn1Encodable);
-					for(ASN1ObjectIdentifier oid: extensions.getExtensionOIDs()){
-						trace("copying oid '"+oid.toString()+"' from csr to PKIMessage");
-						certExtList.add(extensions.getExtension(oid));
+					try {
+						Extensions extensions = Extensions.getInstance(asn1Encodable);
+						for (ASN1ObjectIdentifier oid : extensions.getExtensionOIDs()) {
+							trace("copying oid '" + oid.toString() + "' from csr to PKIMessage");
+							certExtList.add(extensions.getExtension(oid));
+						}
+					}catch(Exception ex){
+						trace("problem reading extension: " + ex.getMessage());
 					}
 				}
 			}
 		}
-		return buildCertRequest(certReqId, p10Req.getSubject(), certExtList, keyInfo, signer);
+		return buildCertRequest(certReqId, subjectDN, certExtList, keyInfo, signer);
 	}
 
 
@@ -1102,6 +1141,34 @@ public class CMPClientImpl {
 		}
 
 		return csr;
+	}
+
+	/**
+	 *
+	 * @param reqAttributes
+	 * @return
+	 */
+	public Set<GeneralName> getSANList(Attribute[] reqAttributes) {
+
+		Set<GeneralName> generalNameSet = new HashSet<>();
+
+		for( Attribute attr : reqAttributes) {
+			if( PKCSObjectIdentifiers.pkcs_9_at_extensionRequest.equals(attr.getAttrType())){
+
+				Extensions extensions = Extensions.getInstance(attr.getAttrValues().getObjectAt(0));
+
+				GeneralNames gns = GeneralNames.fromExtensions(extensions, Extension.subjectAlternativeName);
+				if( gns != null) {
+
+					GeneralName[] names = gns.getNames();
+					for (GeneralName name : names) {
+						trace("Type: " + name.getTagNo() + " | Name: " + name.getName());
+						generalNameSet.add(name);
+					}
+				}
+			}
+		}
+		return generalNameSet;
 	}
 
 	void warn(String msg){
