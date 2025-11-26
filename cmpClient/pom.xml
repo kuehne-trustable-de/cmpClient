@@ -46,7 +46,7 @@
 
         <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
 
-		<bouncyCastleVersion>1.82</bouncyCastleVersion>
+		<bouncyCastleVersion>1.83</bouncyCastleVersion>
 		<slf4jApiVersion>2.0.17</slf4jApiVersion>
 		<dependencyCheck.version>12.1.9</dependencyCheck.version>
 		<dependencyCheck.skip>false</dependencyCheck.skip>
