@@ -48,7 +48,7 @@
 
 		<bouncyCastleVersion>1.82</bouncyCastleVersion>
 		<slf4jApiVersion>2.0.17</slf4jApiVersion>
-		<dependencyCheck.version>12.1.9</dependencyCheck.version>
+		<dependencyCheck.version>12.2.0</dependencyCheck.version>
 		<dependencyCheck.skip>false</dependencyCheck.skip>
 
     </properties>
