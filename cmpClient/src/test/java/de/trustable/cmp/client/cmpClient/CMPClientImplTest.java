@@ -158,6 +158,7 @@ class CMPClientImplTest {
         Assertions.assertNotNull(certificateResponseContent.getMessage());
         Assertions.assertEquals("", certificateResponseContent.getMessage());
     }
+
     @Test
     void validateCertRequestKeySigner() throws GeneralSecurityException, IOException, CMPException, CRMFException {
 
@@ -177,7 +178,7 @@ class CMPClientImplTest {
     }
 
     @Test
-    void parseCertErrResponse() throws GeneralSecurityException, IOException, CMPException, CRMFException {
+    void parseCertErrResponse() throws IOException, CMPException, CRMFException {
 
         final ASN1Primitive derObject = cmpClient.getDERObject(Base64.getDecoder().decode(TEST_CMP_ERR_REQUEST ));
 
