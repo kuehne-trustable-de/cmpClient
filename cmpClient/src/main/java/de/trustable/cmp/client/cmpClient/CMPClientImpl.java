@@ -276,6 +276,9 @@ public class CMPClientImpl {
 		} catch (CMPException e) {
 			log("CMP problem", e);
 			throw new GeneralSecurityException(e.getMessage());
+		} catch (FileNotFoundException e) {
+			log("Target URL not found. Check CA Url and alias", e);
+			throw new GeneralSecurityException("Target URL not found. Check CA Url and alias. " + e.getMessage());
 		} catch (IOException e) {
 			log("IO / encoding problem", e);
 			throw new GeneralSecurityException(e.getMessage());

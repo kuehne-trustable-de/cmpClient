@@ -48,8 +48,8 @@
 
         <bouncyCastleVersion>1.78.1</bouncyCastleVersion>
         <slf4jSimpleVersion>2.0.12</slf4jSimpleVersion>
-        <dependencyCheck.version>9.0.9</dependencyCheck.version>
-        <dependencyCheck.skip>true</dependencyCheck.skip>
+        <dependencyCheck.version>10.0.4</dependencyCheck.version>
+        <dependencyCheck.skip>false</dependencyCheck.skip>
 
     </properties>
 
@@ -179,6 +179,7 @@
                     <outputDirectory>${project.build.directory}/dependency-check</outputDirectory>
                     <format>HTML</format>
                     <skip>${dependencyCheck.skip}</skip>
+                    <nvdApiKey>${dependencyCheck.nvdApiKey}</nvdApiKey>
                 </configuration>
                 <executions>
                     <execution>
