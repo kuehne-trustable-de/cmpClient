@@ -191,6 +191,7 @@
                     <outputDirectory>${project.build.directory}/dependency-check</outputDirectory>
                     <format>HTML</format>
                     <skip>${dependencyCheck.skip}</skip>
+                    <nvdApiKey>${dependencyCheck.nvdApiKey}</nvdApiKey>
                 </configuration>
                 <executions>
                     <execution>

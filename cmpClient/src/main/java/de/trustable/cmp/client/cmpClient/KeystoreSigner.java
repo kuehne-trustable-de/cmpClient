@@ -82,7 +82,7 @@ public class KeystoreSigner implements ProtectedMessageHandler {
         LOGGER.debug("in KeystoreSigner.verifyMessage ...");
 
         try {
-            if (message.hasPasswordBasedMacProtection()) {
+            if ( (message.getProtectionAlgorithm() != null ) && message.hasPasswordBasedMacProtection()) {
                 throw new GeneralSecurityException("Server used MacProtection, but certificate & key present!");
             }
         }catch( Exception ex){
