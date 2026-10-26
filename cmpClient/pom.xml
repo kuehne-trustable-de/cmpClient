@@ -6,7 +6,7 @@
 
     <groupId>de.trustable.cmp.client</groupId>
     <artifactId>cmpClient</artifactId>
-    <version>3.2.2</version>
+    <version>3.2.4</version>
     <packaging>jar</packaging>
 
     <name>cmpClient</name>
@@ -51,6 +51,8 @@
 		<dependencyCheck.version>13.0.0</dependencyCheck.version>
 		<dependencyCheck.skip>false</dependencyCheck.skip>
 
+        <maven.autoPublish>false</maven.autoPublish>
+
     </properties>
 
     <dependencies>
@@ -74,10 +76,11 @@
             <version>4.13.2</version>
             <scope>test</scope>
         </dependency>
+
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>6.1.3</version>
+            <version>6.0.1</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -144,18 +147,18 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-		      <artifactId>maven-source-plugin</artifactId>
+                <artifactId>maven-source-plugin</artifactId>
 				<version>3.4.0</version>
-		      <executions>
-		        <execution>
-		          <id>attach-sources</id>
-		          <goals>
-		            <goal>jar</goal>
-		          </goals>
-		        </execution>
-		      </executions>
-		    </plugin>
-		    <plugin>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
 	            <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-assembly-plugin</artifactId>
 	            <version>3.8.0</version>
@@ -240,6 +243,18 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>org.sonatype.central</groupId>
+                <artifactId>central-publishing-maven-plugin</artifactId>
+                <version>0.9.0</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <publishingServerId>central</publishingServerId>
+                    <autoPublish>${maven.autoPublish}</autoPublish>
+                </configuration>
+            </plugin>
+
+
         </plugins>
     </build>
 </project>

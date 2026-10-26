@@ -18,6 +18,7 @@ package de.trustable.cmp.client.cmpClient;
  */
 
 import de.trustable.cmp.client.ProtectedMessageHandler;
+import de.trustable.cmp.client.cmpClient.exception.CMPConnectorErrorResponseException;
 import org.bouncycastle.asn1.*;
 import org.bouncycastle.asn1.cmp.*;
 import org.bouncycastle.asn1.crmf.CertId;
@@ -51,6 +52,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.math.BigInteger;
+import java.nio.file.Files;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.security.Security;
@@ -66,226 +68,240 @@ import java.util.*;
  */
 public class CMPClientImpl {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(CMPClientImpl.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(CMPClientImpl.class);
 
-	SecureRandom secRandom = new SecureRandom();
+    SecureRandom secRandom = new SecureRandom();
 
-	private CMPClientConfig cmpClientConfig;
+    private CMPClientConfig cmpClientConfig;
 
-	private CMPClientImpl() {
-		Security.addProvider(new BouncyCastleProvider());
-	}
+    private CMPClientImpl() {
+        Security.addProvider(new BouncyCastleProvider());
+    }
 
-	public CMPClientImpl(final CMPClientConfig cmpClientConfig) {
-		this();
-		this.cmpClientConfig = cmpClientConfig;
-	}
+    public CMPClientImpl(final CMPClientConfig cmpClientConfig) {
+        this();
+        this.cmpClientConfig = cmpClientConfig;
+    }
 
-	public GenMsgContent getGeneralMessageRequest()
-			throws GeneralSecurityException {
+    public GenMsgContent getGeneralMessageRequest()
+            throws GeneralSecurityException {
 
-		try {
-			X500Name subjectDN = X500Name.getInstance(new X500Name("CN=User1").toASN1Primitive());
-			PKIMessage pkiRequest = buildGeneralMessageRequest(subjectDN, cmpClientConfig.getMessageHandler());
+        try {
+            X500Name subjectDN = X500Name.getInstance(new X500Name("CN=User1").toASN1Primitive());
+            PKIMessage pkiRequest = buildGeneralMessageRequest(subjectDN, cmpClientConfig.getMessageHandler());
 
-			ASN1Object requestContent = pkiRequest;
-			if (cmpClientConfig.isMultipleMessages()) {
-				trace("wrapping PKIMessage into PKIMessages");
-				requestContent = new PKIMessages(pkiRequest);
-			}
-			byte[] requestBytes = requestContent.getEncoded();
+            ASN1Object requestContent = pkiRequest;
+            if (cmpClientConfig.isMultipleMessages()) {
+                trace("wrapping PKIMessage into PKIMessages");
+                requestContent = new PKIMessages(pkiRequest);
+            }
+            byte[] requestBytes = requestContent.getEncoded();
 
-			if (cmpClientConfig.isVerbose()) {
-				File dumpRequestFile = File.createTempFile("cmp_request_dump", ".der");
-				try (FileOutputStream fos = new FileOutputStream(dumpRequestFile)) {
-					fos.write(requestBytes);
-				}
-				trace("requestBytes in dump file : " + dumpRequestFile.getAbsolutePath());
+            if (cmpClientConfig.isVerbose()) {
+                File dumpRequestFile = File.createTempFile("cmp_request_dump", ".der");
+                try (FileOutputStream fos = new FileOutputStream(dumpRequestFile)) {
+                    fos.write(requestBytes);
+                }
+                trace("requestBytes in dump file : " + dumpRequestFile.getAbsolutePath());
 
-				trace("requestBytes : " + java.util.Base64.getEncoder().encodeToString(requestBytes));
-				trace("cmp client calls url '" + cmpClientConfig.getCaUrl() + "' with alias '" + cmpClientConfig.getCmpAlias() + "'");
-			}
-
-
-			// send and receive ..
-			byte[] responseBytes = cmpClientConfig.getRemoteTargetHandler().sendHttpReq(cmpClientConfig.getCaUrl() + "/" + cmpClientConfig.getCmpAlias(),
-					requestBytes,
-					cmpClientConfig.getMsgContentType(),
-					cmpClientConfig.getSni(),
-					false,
-					cmpClientConfig.getP12ClientStore(),
-					cmpClientConfig.getP12ClientSecret());
-
-			if (responseBytes == null) {
-				throw new GeneralSecurityException("remote connector returned 'null'");
-			}
-
-			if (cmpClientConfig.isVerbose()) {
-				File dumpResponseFile = File.createTempFile("cmp_response_dump", ".der");
-				try (FileOutputStream fos = new FileOutputStream(dumpResponseFile)) {
-					fos.write(responseBytes);
-				}
-				trace("responseBytes in dump file : " + dumpResponseFile.getAbsolutePath());
-				trace("responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));
-			}
-
-			// extract the certificate
-			return readGenMsgResponse(responseBytes);
+                trace("requestBytes : " + java.util.Base64.getEncoder().encodeToString(requestBytes));
+                trace("cmp client calls url '" + cmpClientConfig.getCaUrl() + "' with alias '" + cmpClientConfig.getCmpAlias() + "'");
+            }
 
 
-		} catch (IOException e) {
-			log("IO / encoding problem", e);
-			throw new GeneralSecurityException(e.getMessage());
-		}
-	}
+            // send and receive ..
+            byte[] responseBytes = cmpClientConfig.getRemoteTargetHandler().sendHttpReq(cmpClientConfig.getCaUrl() + "/" + cmpClientConfig.getCmpAlias(),
+                    requestBytes,
+                    cmpClientConfig.getMsgContentType(),
+                    cmpClientConfig.getSni(),
+                    false,
+                    cmpClientConfig.getP12ClientStore(),
+                    cmpClientConfig.getP12ClientSecret());
 
-	public CertificateResponseContent signCertificateRequest(final InputStream isCSR)
-			throws GeneralSecurityException {
+            if (responseBytes == null) {
+                throw new GeneralSecurityException("remote connector returned 'null'");
+            }
 
-		PKCS10CertificationRequest p10Req = convertPemToPKCS10CertificationRequest(isCSR);
-		return signCertificateRequest(p10Req);
-	}
+            if (cmpClientConfig.isVerbose()) {
+                File dumpResponseFile = File.createTempFile("cmp_response_dump", ".der");
+                try (FileOutputStream fos = new FileOutputStream(dumpResponseFile)) {
+                    fos.write(responseBytes);
+                }
+                trace("responseBytes in dump file : " + dumpResponseFile.getAbsolutePath());
+                trace("responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));
+            }
 
-	public CertificateResponseContent signCertificateRequest(final PKCS10CertificationRequest p10Req)
-			throws GeneralSecurityException {
+            // extract the certificate
+            return readGenMsgResponse(responseBytes);
 
-		long certReqId = secRandom.nextLong();
 
-		try {
+        } catch (IOException e) {
+            log("IO / encoding problem", e);
+            throw new GeneralSecurityException(e.getMessage());
+        }
+    }
 
-			// build a CMP request from the CSR
-			PKIMessage pkiRequest = buildCertRequest(certReqId,
-					p10Req,
-					cmpClientConfig.getMessageHandler(),
-					cmpClientConfig.isFillEmptySubjectWithSAN() );
+    public CertificateResponseContent signCertificateRequest(final InputStream isCSR)
+            throws GeneralSecurityException {
 
-			ASN1Object requestContent = pkiRequest;
-			if(cmpClientConfig.isMultipleMessages()){
-				trace("wrapping PKIMessage into PKIMessages");
-				requestContent = new PKIMessages(pkiRequest);
-			}
-			byte[] requestBytes = requestContent.getEncoded();
+        PKCS10CertificationRequest p10Req = convertPemToPKCS10CertificationRequest(isCSR);
+        return signCertificateRequest(p10Req);
+    }
 
-			if(cmpClientConfig.isVerbose()) {
-				File dumpRequestFile = File.createTempFile("cmp_request_dump", ".der");
-				try (FileOutputStream fos = new FileOutputStream(dumpRequestFile)) {
-					fos.write(requestBytes);
-				}
-				trace("requestBytes in dump file : " + dumpRequestFile.getAbsolutePath());
+    public CertificateResponseContent signCertificateRequest(final PKCS10CertificationRequest p10Req)
+            throws GeneralSecurityException {
 
-				trace("requestBytes : " + java.util.Base64.getEncoder().encodeToString(requestBytes));
-				trace("cmp client calls url '" + cmpClientConfig.getCaUrl() + "' with alias '" + cmpClientConfig.getCmpAlias() + "'");
-			}
+        long certReqId = secRandom.nextLong();
 
-			// send and receive ..
-			byte[] responseBytes = cmpClientConfig.getRemoteTargetHandler().sendHttpReq(cmpClientConfig.getCaUrl() + "/" + cmpClientConfig.getCmpAlias(),
-					requestBytes,
-					cmpClientConfig.getMsgContentType(),
-					cmpClientConfig.getSni(),
-					cmpClientConfig.isDisableHostNameVerifier(),
-					cmpClientConfig.getP12ClientStore(),
-					cmpClientConfig.getP12ClientSecret());
+        try {
 
-			if (responseBytes == null) {
-				throw new GeneralSecurityException("remote connector returned 'null'");
-			}
+            // build a CMP request from the CSR
+            PKIMessage pkiRequest = buildCertRequest(certReqId,
+                    p10Req,
+                    cmpClientConfig.getMessageHandler(),
+                    cmpClientConfig.isFillEmptySubjectWithSAN());
 
-			if(cmpClientConfig.isVerbose()) {
-				File dumpResponseFile = File.createTempFile("cmp_response_dump", ".der");
-				try (FileOutputStream fos = new FileOutputStream(dumpResponseFile)) {
-					fos.write(responseBytes);
-				}
-				trace("responseBytes in dump file : " + dumpResponseFile.getAbsolutePath());
-			}
-			trace("responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));
+            ASN1Object requestContent = pkiRequest;
+            if (cmpClientConfig.isMultipleMessages()) {
+                trace("wrapping PKIMessage into PKIMessages");
+                requestContent = new PKIMessages(pkiRequest);
+            }
+            byte[] requestBytes = requestContent.getEncoded();
 
-			// extract the certificate
-			return readCertResponse(responseBytes, pkiRequest);
+            if (cmpClientConfig.isVerbose()) {
+                File dumpRequestFile = File.createTempFile("cmp_request_dump", ".der");
+                try (FileOutputStream fos = new FileOutputStream(dumpRequestFile)) {
+                    fos.write(requestBytes);
+                }
+                trace("requestBytes in dump file : " + dumpRequestFile.getAbsolutePath());
 
-		} catch (CRMFException e) {
-			log("CMS format problem", e);
-			throw new GeneralSecurityException(e.getMessage());
-		} catch (CMPException e) {
-			log("CMP problem", e);
-			throw new GeneralSecurityException(e.getMessage());
-		} catch (IOException e) {
-			log("IO / encoding problem", e);
-			throw new GeneralSecurityException(e.getMessage());
-		}
-	}
+                trace("requestBytes : " + java.util.Base64.getEncoder().encodeToString(requestBytes));
+                trace("cmp client calls url '" + cmpClientConfig.getCaUrl() + "' with alias '" + cmpClientConfig.getCmpAlias() + "'");
+            }
 
-	/**
-	 * revoke a given certificate
-	 * @param certFile the File handle of the input certificate
-	 * @param reason the reason as a string
-	 * @throws GeneralSecurityException something cryptographic went wrong
-	 * @throws IOException file access failed somehow
-	 */
-	public void revokeCertificate(final File certFile, final String reason) throws GeneralSecurityException, IOException {
+            // send and receive ..
+            byte[] responseBytes = cmpClientConfig.getRemoteTargetHandler().sendHttpReq(cmpClientConfig.getCaUrl() + "/" + cmpClientConfig.getCmpAlias(),
+                    requestBytes,
+                    cmpClientConfig.getMsgContentType(),
+                    cmpClientConfig.getSni(),
+                    cmpClientConfig.isDisableHostNameVerifier(),
+                    cmpClientConfig.getP12ClientStore(),
+                    cmpClientConfig.getP12ClientSecret());
 
-		try(InputStream isCert = new FileInputStream(certFile)) {
+            if (responseBytes == null) {
+                throw new GeneralSecurityException("remote connector returned 'null'");
+            }
 
-			CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
-			X509Certificate x509Cert = (X509Certificate) certificateFactory.generateCertificate(isCert);
+            if (cmpClientConfig.isVerbose()) {
+                File dumpResponseFile = File.createTempFile("cmp_response_dump", ".der");
+                try (FileOutputStream fos = new FileOutputStream(dumpResponseFile)) {
+                    fos.write(responseBytes);
+                }
+                trace("responseBytes in dump file : " + dumpResponseFile.getAbsolutePath());
+            }
+            trace("responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));
 
-			CRLReason crlReason = crlReasonFromString(reason);
+            // extract the certificate
+            return readCertResponse(responseBytes, pkiRequest);
 
-			revokeCertificate(JcaX500NameUtil.getIssuer(x509Cert), JcaX500NameUtil.getSubject(x509Cert),
-					x509Cert.getSerialNumber(), crlReason);
+        } catch (CRMFException e) {
+            log("CMS format problem", e);
+            throw new GeneralSecurityException(e.getMessage());
+        } catch (CMPException e) {
+            log("CMP problem", e);
+            throw new GeneralSecurityException(e.getMessage());
+        } catch (IOException e) {
+            log("IO / encoding problem", e);
+            throw new GeneralSecurityException(e.getMessage());
+        }
+    }
 
-			log("revocation of certificate '"+x509Cert.getSubjectDN().getName()+"' with reason '"+reason+"' succeeded!");
-		}
-	}
+    /**
+     * revoke a given certificate
+     *
+     * @param certFile the File handle of the input certificate
+     * @param reason   the reason as a string
+     * @throws GeneralSecurityException something cryptographic went wrong
+     * @throws IOException              file access failed somehow
+     */
+    public void revokeCertificate(final File certFile, final String reason) throws GeneralSecurityException, IOException {
 
-	/**
-	 * revoke a certificate identified by issuer, subject and serial
-	 * @param issuerDN The X500Name of the issuer
-	 * @param subjectDN The X500Name of the subject
-	 * @param serial the serial
-	 * @param crlReason reason the reason as a BC enum
-	 * @throws GeneralSecurityException something cryptographic went wrong
-	 */
-	public void revokeCertificate(final X500Name issuerDN, final X500Name subjectDN, final BigInteger serial,
-								  final CRLReason crlReason)
-			throws GeneralSecurityException {
+        try (InputStream isCert = Files.newInputStream(certFile.toPath())) {
 
-		long certRevId = new Random().nextLong();
+            CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
+            X509Certificate x509Cert = (X509Certificate) certificateFactory.generateCertificate(isCert);
 
-		try {
+            CRLReason crlReason = crlReasonFromString(reason);
 
-			// build a CMP request from the revocation infos
-			byte[] revocationRequestBytes = buildRevocationRequest(certRevId, issuerDN, subjectDN, serial, crlReason);
+            revokeCertificate(JcaX500NameUtil.getIssuer(x509Cert), JcaX500NameUtil.getSubject(x509Cert),
+                    x509Cert.getSerialNumber(), crlReason);
 
-			// send and receive ..
-			trace("revocation requestBytes : " + java.util.Base64.getEncoder().encodeToString(revocationRequestBytes));
-			byte[] responseBytes = cmpClientConfig.getRemoteTargetHandler().sendHttpReq(cmpClientConfig.getCaUrl() + "/" + cmpClientConfig.getCmpAlias(),
-					revocationRequestBytes,
-					cmpClientConfig.getMsgContentType(),
-					cmpClientConfig.getSni(),
-					cmpClientConfig.isDisableHostNameVerifier(),
-					cmpClientConfig.getP12ClientStore(),
-					cmpClientConfig.getP12ClientSecret());
-			trace("revocation responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));
+            log("revocation of certificate '" + x509Cert.getSubjectDN().getName() + "' with reason '" + reason + "' succeeded!");
+        }
+    }
 
-			// handle the response
-			readRevResponse(responseBytes);
+    /**
+     * revoke a certificate identified by issuer, subject and serial
+     *
+     * @param issuerDN  The X500Name of the issuer
+     * @param subjectDN The X500Name of the subject
+     * @param serial    the serial
+     * @param crlReason reason the reason as a BC enum
+     * @throws GeneralSecurityException something cryptographic went wrong
+     */
+    public void revokeCertificate(final X500Name issuerDN, final X500Name subjectDN, final BigInteger serial,
+                                  final CRLReason crlReason)
+            throws GeneralSecurityException {
 
-		} catch (CRMFException e) {
-			log("CMS format problem", e);
-			throw new GeneralSecurityException(e.getMessage());
-		} catch (CMPException e) {
-			log("CMP problem", e);
-			throw new GeneralSecurityException(e.getMessage());
-		} catch (FileNotFoundException e) {
-			log("Target URL not found. Check CA Url and alias", e);
-			throw new GeneralSecurityException("Target URL not found. Check CA Url and alias. " + e.getMessage());
-		} catch (IOException e) {
-			log("IO / encoding problem", e);
-			throw new GeneralSecurityException(e.getMessage());
-		}
-	}
+        long certRevId = new Random().nextLong();
 
-	public PKIMessage buildGeneralMessageRequest(final X500Name subjectDN,
+        try {
+
+            // build a CMP request from the revocation infos
+            byte[] revocationRequestBytes = buildRevocationRequest(certRevId, issuerDN, subjectDN, serial, crlReason);
+
+            // send and receive ..
+            trace("revocation requestBytes : " + java.util.Base64.getEncoder().encodeToString(revocationRequestBytes));
+            byte[] responseBytes = cmpClientConfig.getRemoteTargetHandler().sendHttpReq(cmpClientConfig.getCaUrl() + "/" + cmpClientConfig.getCmpAlias(),
+                    revocationRequestBytes,
+                    cmpClientConfig.getMsgContentType(),
+                    cmpClientConfig.getSni(),
+                    cmpClientConfig.isDisableHostNameVerifier(),
+                    cmpClientConfig.getP12ClientStore(),
+                    cmpClientConfig.getP12ClientSecret());
+            trace("revocation responseBytes : " + java.util.Base64.getEncoder().encodeToString(responseBytes));
+
+            // handle the response
+            readRevResponse(responseBytes);
+
+        } catch (CRMFException e) {
+            log("CMS format problem", e);
+            throw new GeneralSecurityException(e.getMessage());
+        } catch (CMPException e) {
+            log("CMP problem", e);
+            throw new GeneralSecurityException(e.getMessage());
+        } catch (FileNotFoundException e) {
+            log("Target URL not found. Check CA Url and alias", e);
+            throw new GeneralSecurityException("Target URL not found. Check CA Url and alias. " + e.getMessage());
+        } catch (IOException e) {
+            log("IO / encoding problem", e);
+            throw new GeneralSecurityException(e.getMessage());
+        }
+    }
+
+    public PKIMessage buildGeneralMessageRequest(final X500Name subjectDN) throws GeneralSecurityException {
+
+        if( cmpClientConfig.getIssuerName() != null) {
+            return buildGeneralMessageRequest(cmpClientConfig.getIssuerName(), cmpClientConfig.getMessageHandler());
+        }else if( subjectDN != null) {
+            return buildGeneralMessageRequest(subjectDN, cmpClientConfig.getMessageHandler());
+        }else{
+            X500Name dummyDN = new X500Name("CN=DummyUser");
+            return buildGeneralMessageRequest(dummyDN, cmpClientConfig.getMessageHandler());
+        }
+    }
+
+    public PKIMessage buildGeneralMessageRequest(final X500Name subjectDN,
 												 final ProtectedMessageHandler messageHandler)
 			throws GeneralSecurityException {
 
@@ -305,9 +321,7 @@ public class CMPClientImpl {
 
 		ProtectedPKIMessage message = messageHandler.signMessage(pbuilder);
 
-		PKIMessage pkiMessage = message.toASN1Structure();
-
-		return pkiMessage;
+        return message.toASN1Structure();
 
 	}
 
@@ -931,7 +945,7 @@ public class CMPClientImpl {
 			log(errMsg);
 		}
 
-		throw new GeneralSecurityException(errMsg);
+		throw new CMPConnectorErrorResponseException(errMsg);
 	}
 
 

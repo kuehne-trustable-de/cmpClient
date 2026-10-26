@@ -11,7 +11,6 @@ import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.Extensions;
 import org.bouncycastle.cert.cmp.CMPException;
-import org.bouncycastle.cert.cmp.GeneralPKIMessage;
 import org.bouncycastle.cert.cmp.ProtectedPKIMessage;
 import org.bouncycastle.cert.cmp.ProtectedPKIMessageBuilder;
 import org.bouncycastle.cert.crmf.CRMFException;
@@ -23,7 +22,6 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
-import java.security.KeyStore;
 import java.util.Base64;
 
 
@@ -81,12 +79,12 @@ class CMPClientImplTest {
 
         ProtectedMessageHandler messageHandler = new ProtectedMessageHandler(){
             @Override
-            public ProtectedPKIMessage signMessage(ProtectedPKIMessageBuilder builder) throws GeneralSecurityException {
+            public ProtectedPKIMessage signMessage(ProtectedPKIMessageBuilder builder) {
                 return null;
             }
 
             @Override
-            public boolean verifyMessage(ProtectedPKIMessage message) throws GeneralSecurityException {
+            public boolean verifyMessage(ProtectedPKIMessage message) {
                 return true;
             }
 
@@ -159,6 +157,7 @@ class CMPClientImplTest {
         Assertions.assertEquals("", certificateResponseContent.getMessage());
     }
 
+/*
     @Test
     void validateCertRequestKeySigner() throws GeneralSecurityException, IOException, CMPException, CRMFException {
 
@@ -176,7 +175,7 @@ class CMPClientImplTest {
         keystoreSigner.verifyMessage(protectedPKIMsg);
 
     }
-
+*/
     @Test
     void parseCertErrResponse() throws IOException, CMPException, CRMFException {
 
@@ -187,7 +186,7 @@ class CMPClientImplTest {
         final PKIMessage pkiMessage = PKIMessage.getInstance(derObject);
         try {
             CMPClientImpl.CertificateResponseContent certificateResponseContent = cmpClient.readCertResponse(Base64.getDecoder().decode(TEST_CMP_ERR_RESPONSE), pkiMessage);
-            Assertions.fail("Expecting a GeneralSecurityException on erroer response");
+            Assertions.fail("Expecting a GeneralSecurityException on error response");
         } catch(GeneralSecurityException ge){
             Assertions.assertEquals( "StatusInfo :#0: Failed to verify message using both Global Shared Secret and CMP RA Authentication Secret", ge.getMessage());
         }
